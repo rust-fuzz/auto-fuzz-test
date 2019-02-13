@@ -1,0 +1,2 @@
+This is a experiment with converting functions into fuzz test for the functions.
+The exact form this will take is not yet clear. At the moment it takes input as a hard coded string in main, and attempt to convert it to proptest invocations. 

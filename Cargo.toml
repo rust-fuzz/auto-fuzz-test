@@ -1,0 +1,9 @@
+[package]
+name = "auto-fuzz-test"
+version = "0.1.0"
+authors = ["Eh2406 <YeomanYaacov@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+quote = "0.6.11"
+syn = {version="0.15.26", features = ["full", "visit"] }
