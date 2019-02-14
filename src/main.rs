@@ -1,5 +1,5 @@
 use quote::quote;
-use syn::{visit::Visit, File, FnArg, ImplItemMethod, ItemFn};
+use syn::{visit::Visit, File, FnArg, ImplItem, ItemFn, ItemImpl};
 
 struct FnVisitor;
 
@@ -11,7 +11,7 @@ impl<'ast> Visit<'ast> for FnVisitor {
             if let FnArg::Captured(a) = a {
                 let pat = &a.pat;
                 let ty = &a.ty;
-                print!("{}: Any::<{}>(),", quote!(#pat), quote!(#ty));
+                print!("{}: Any::<{}>(), ", quote!(#pat), quote!(#ty));
             }
         }
         print!(") {{");
@@ -19,43 +19,38 @@ impl<'ast> Visit<'ast> for FnVisitor {
         for a in &f.decl.inputs {
             if let FnArg::Captured(a) = a {
                 let pat = &a.pat;
-                print!("{},", quote!(#pat));
+                print!("{}, ", quote!(#pat));
             }
         }
         println!(")}}}}");
         syn::visit::visit_item_fn(self, f);
     }
-    fn visit_impl_item_method(&mut self, f: &'ast ImplItemMethod) {
-        let name = &f.sig.ident;
-        print!("proptest! {{ #[test] fn test_{}_fuzz (", name);
-        for a in &f.sig.decl.inputs {
-            match a {
-                FnArg::SelfRef(a) => {
-                    let ty = &a.self_token;
-                    print!("self_like_thing: Any::<{}>(),", quote!(#ty));
+    fn visit_item_impl(&mut self, f: &'ast ItemImpl) {
+        let self_type = &f.self_ty;
+
+        for item in &f.items {
+            if let ImplItem::Method(f) = item {
+                let name = &f.sig.ident;
+                print!("proptest! {{ #[test] fn test_{}_fuzz (", name);
+                print!("self_like_thing: Any::<{}>(), ", quote!(#self_type));
+                for a in &f.sig.decl.inputs {
+                    if let FnArg::Captured(a) = a {
+                        let pat = &a.pat;
+                        let ty = &a.ty;
+                        print!("{}: Any::<{}>(), ", quote!(#pat), quote!(#ty));
+                    }
                 }
-                FnArg::SelfValue(a) => {
-                    let ty = &a.self_token;
-                    print!("self_like_thing: Any::<{}>(),", quote!(#ty));
+                print!(") {{ self_like_thing.{} (", name);
+                for a in &f.sig.decl.inputs {
+                    if let FnArg::Captured(a) = a {
+                        let pat = &a.pat;
+                        print!("{}, ", quote!(#pat));
+                    }
                 }
-                FnArg::Captured(a) => {
-                    let pat = &a.pat;
-                    let ty = &a.ty;
-                    print!("{}: Any::<{}>(),", quote!(#pat), quote!(#ty));
-                }
-                _ => ()
+                println!(")}}}}");
             }
         }
-        print!(") {{");
-        print!("{} (", name);
-        for a in &f.sig.decl.inputs {
-            if let FnArg::Captured(a) = a {
-                let pat = &a.pat;
-                print!("{},", quote!(#pat));
-            }
-        }
-        println!(")}}}}");
-        syn::visit::visit_impl_item_method(self, f);
+        syn::visit::visit_item_impl(self, f);
     }
 }
 
