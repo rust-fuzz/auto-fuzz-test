@@ -16,10 +16,14 @@ fn main() {
     };
 
     let syntax_tree: syn::File = syn::parse2(code).expect("Failed to parse input. Is it Rust code?");
-    FnVisitor{callback: Box::new(print_a_test)}.visit_file(&syntax_tree);
+    // function print_a_test doesn't care about some of the parameters, so we throw them away here
+    let callback = |this: Option<&Type>, ident: &Ident, decl: &FnDecl, _unsafety: &Option<Unsafe>, _asyncness: &Option<Async>| {
+        print_a_test(this, ident, decl);
+    };
+    FnVisitor{callback: Box::new(callback)}.visit_file(&syntax_tree);
 }
 
-fn print_a_test(this: Option<&Type>, ident: &Ident, decl: &FnDecl, _unsafety: &Option<Unsafe>, _asyncness: &Option<Async>) {
+fn print_a_test(this: Option<&Type>, ident: &Ident, decl: &FnDecl) {
     print!("proptest! {{ #[test] fn test_{}_fuzz (", ident);
     if let Some(self_type) = &this {
         let self_type = format!("{}", quote!(#self_type));
