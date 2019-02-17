@@ -57,6 +57,6 @@ fn main() {
         }
     };
 
-    let syntax_tree: File = syn::parse2(code).unwrap();
+    let syntax_tree: File = syn::parse2(code).expect("Failed to parse input. Is it Rust code?");
     FnVisitor.visit_file(&syntax_tree);
 }
