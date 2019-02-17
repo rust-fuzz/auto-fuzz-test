@@ -1,5 +1,5 @@
 use quote::quote;
-use syn::{visit::Visit, File, FnArg, FnDecl, Ident, ImplItem, ItemFn, ItemImpl, Type};
+use syn::{visit::Visit, FnArg, FnDecl, Ident, ImplItem, ItemFn, ItemImpl, Type};
 use syn::token::{Unsafe, Async};
 
 fn print_a_test(this: Option<&Type>, ident: &Ident, decl: &FnDecl, _unsafety: &Option<Unsafe>, _asyncness: &Option<Async>) {
@@ -29,7 +29,7 @@ fn print_a_test(this: Option<&Type>, ident: &Ident, decl: &FnDecl, _unsafety: &O
     println!(")}}}}");
 }
 
-struct FnVisitor;
+pub struct FnVisitor;
 
 impl<'ast> Visit<'ast> for FnVisitor {
     fn visit_item_fn(&mut self, f: &'ast ItemFn) {
@@ -45,18 +45,4 @@ impl<'ast> Visit<'ast> for FnVisitor {
         }
         syn::visit::visit_item_impl(self, f);
     }
-}
-
-fn main() {
-    let code = quote! {
-        pub fn f(a: String) {}
-        pub fn g(b: String, c: bool) {}
-        impl String {
-            fn h(&self, d: u8) {}
-            fn i(self, e: u8) {}
-        }
-    };
-
-    let syntax_tree: File = syn::parse2(code).expect("Failed to parse input. Is it Rust code?");
-    FnVisitor.visit_file(&syntax_tree);
 }
