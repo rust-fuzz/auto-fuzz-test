@@ -1,10 +1,11 @@
 use quote::quote;
-use syn::{visit::Visit, File, FnArg, FnDecl, Ident, ImplItem, ItemFn, ItemImpl};
+use syn::{visit::Visit, File, FnArg, FnDecl, Ident, ImplItem, ItemFn, ItemImpl, Type};
 use syn::token::{Unsafe, Async};
 
-fn print_a_test(this: Option<&str>, ident: &Ident, decl: &FnDecl, _unsafety: &Option<Unsafe>, _asyncness: &Option<Async>) {
+fn print_a_test(this: Option<&Type>, ident: &Ident, decl: &FnDecl, _unsafety: &Option<Unsafe>, _asyncness: &Option<Async>) {
     print!("proptest! {{ #[test] fn test_{}_fuzz (", ident);
     if let Some(self_type) = &this {
+        let self_type = format!("{}", quote!(#self_type));
         print!("self_like_thing: Any::<{}>(), ", self_type);
     }
     for a in &decl.inputs {
@@ -37,11 +38,9 @@ impl<'ast> Visit<'ast> for FnVisitor {
     }
     fn visit_item_impl(&mut self, f: &'ast ItemImpl) {
         let self_type = &f.self_ty;
-        let self_type = format!("{}", quote!(#self_type));
-
         for item in &f.items {
             if let ImplItem::Method(f) = item {
-                print_a_test(Some(&self_type), &f.sig.ident, &f.sig.decl, &f.sig.unsafety, &f.sig.asyncness);
+                print_a_test(Some(self_type), &f.sig.ident, &f.sig.decl, &f.sig.unsafety, &f.sig.asyncness);
             }
         }
         syn::visit::visit_item_impl(self, f);
