@@ -77,10 +77,11 @@ fn main() -> std::result::Result<(), std::io::Error> {
         write!(&mut result, "fuzz_self.").unwrap();
     }
     write!(&mut result, "{}(", ident).unwrap();
-    let is_first_argument = true;
+    let mut is_first_argument = true;
     for arg_num in arg_numbers {
-        write!(&mut result, "fuzz_arg_{}", arg_num).unwrap();
         if ! is_first_argument {write!(&mut result, ",").unwrap()};
+        is_first_argument = false;
+        write!(&mut result, "fuzz_arg_{}", arg_num).unwrap();
     }
 
 
