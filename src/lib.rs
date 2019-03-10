@@ -6,6 +6,8 @@ pub struct FnVisitor {
 }
 
 impl<'ast> Visit<'ast> for FnVisitor {
+    // based on syn visitor example by David Tolnay:
+    // https://github.com/dtolnay/syn/issues/549
     fn visit_item_fn(&mut self, f: &'ast ItemFn) {
         (self.callback)(None, &f.ident, &*f.decl, &f.unsafety, &f.asyncness);
         syn::visit::visit_item_fn(self, f);
