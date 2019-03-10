@@ -1,4 +1,6 @@
 use std::fmt::Write;
+use std::io;
+use std::io::Read;
 use syn;
 use syn::{visit::Visit};
 use syn::{FnArg, FnDecl, Ident, Type};
@@ -6,17 +8,12 @@ use syn::token::{Unsafe, Async};
 use quote::quote;
 use auto_fuzz_test::FnVisitor;
 
-fn main() {
-    let code = quote! {
-        pub fn f(a: String) {}
-        pub fn g(b: String, c: bool) {}
-        impl String {
-            fn h(&self, d: u8) {}
-            fn i(self, e: u8) {}
-        }
-    };
+fn main() -> io::Result<()> {
+    let mut code = String::new();
+    let stdin = io::stdin();
+    stdin.lock().read_to_string(&mut code)?;
 
-    let syntax_tree: syn::File = syn::parse2(code).expect("Failed to parse input. Is it Rust code?");
+    let syntax_tree: syn::File = syn::parse_str(&code).expect("Failed to parse input. Is it Rust code?");
     // function print_a_test doesn't care about some of the parameters, so we throw them away here
     let callback = |this: Option<&Type>, ident: &Ident, decl: &FnDecl, unsafety: &Option<Unsafe>, asyncness: &Option<Async>| {
         // Unsafe functions cannot have fuzzing harnesses generated automatically,
@@ -27,6 +24,7 @@ fn main() {
         }
     };
     FnVisitor{callback: Box::new(callback)}.visit_file(&syntax_tree);
+    Ok(())
 }
 
 fn generate_fuzzing_harness(this: Option<&Type>, ident: &Ident, decl: &FnDecl) -> String {
