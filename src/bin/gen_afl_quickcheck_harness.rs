@@ -15,7 +15,7 @@ fn main() -> io::Result<()> {
 
     let syntax_tree: syn::File = syn::parse_str(&code).expect("Failed to parse input. Is it Rust code?");
     // function print_a_test doesn't care about some of the parameters, so we throw them away here
-    let callback = |this: Option<&Type>, ident: &Ident, decl: &FnDecl, unsafety: &Option<Unsafe>, asyncness: &Option<Async>| {
+    let callback = |this: Option<&Type>, ident: &Ident, decl: &FnDecl, unsafety: &Option<Unsafe>, asyncness: &Option<Async>, _: &()| {
         // Unsafe functions cannot have fuzzing harnesses generated automatically,
         // since it's valid for them to crash for some inputs.
         // Async functions are simply not supported for now.
@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
 
     // print everything in sequence
     print!("{}", prefix);
-    FnVisitor{callback: Box::new(callback)}.visit_file(&syntax_tree);
+    FnVisitor{callback: Box::new(callback), context: ()}.visit_file(&syntax_tree);
     print!("{}", suffix);
 
     Ok(())

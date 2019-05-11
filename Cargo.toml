@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 quote = "0.6.11"
 syn = {version="0.15.26", features = ["full", "visit"] }
+toml = "0.5"

@@ -21,10 +21,10 @@ fn main() {
 
     let syntax_tree: syn::File = syn::parse2(code).expect("Failed to parse input. Is it Rust code?");
     // function print_a_test doesn't care about some of the parameters, so we throw them away here
-    let callback = |this: Option<&Type>, ident: &Ident, decl: &FnDecl, _unsafety: &Option<Unsafe>, _asyncness: &Option<Async>| {
+    let callback = |this: Option<&Type>, ident: &Ident, decl: &FnDecl, _unsafety: &Option<Unsafe>, _asyncness: &Option<Async>, _: &()| {
         print_a_test(this, ident, decl);
     };
-    FnVisitor{callback: Box::new(callback)}.visit_file(&syntax_tree);
+    FnVisitor{callback: Box::new(callback), context: ()}.visit_file(&syntax_tree);
 }
 
 fn print_a_test(this: Option<&Type>, ident: &Ident, decl: &FnDecl) {
