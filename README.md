@@ -2,10 +2,10 @@ Fuzzing is a great (pen)testing tool, as long as you have one or just a handful 
 
 This is an attempt to make fuzzing libraries with large API surfaces feasible by auto-generating the boilerplate. The process is dead simple:
 
-1. Parse the source code with `syn` to find name of functions and their argument types
-2. Generate boilerplate that converts random bytes into Rust types via QuickCheck's `Arbitrary` trait
+1. Parse the source code with [`syn`](https://github.com/dtolnay/syn) to find name of functions and their argument types
+2. Generate boilerplate that converts random bytes into Rust types via [QuickCheck](https://github.com/BurntSushi/quickcheck)'s [`Arbitrary` trait](https://docs.rs/quickcheck/0.8.5/quickcheck/trait.Arbitrary.html)
 3. That's it!
 
-Only AFL fuzzer is currently supported. We've tried cargo-fuzz but that's blocked by an upstream bug.
+Only [AFL](https://github.com/rust-fuzz/afl.rs) fuzzer is currently supported. We've also tried [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) but that's [blocked](https://github.com/Eh2406/auto-fuzz-test/issues/9) by an upstream bug.
 
-This is currently fairly basic, but the idea appears to be workable. Contributions are welcome!
+The implementation is very basic right now, but the idea appears to be workable. Contributions are welcome!
