@@ -60,20 +60,25 @@ fn main() -> io::Result<()> {
     };
 
     // Read the entire file into a string after parsing it with rustc
-    let code_str: String = String::from_utf8(
-        Command::new("cargo")
-            .arg("+nightly")
-            .arg("rustc")
-            .arg("--profile=check")
-            .arg("--")
-            .arg("-Z")
-            .arg("unpretty=hir")
-            .current_dir(&crate_info.crate_root())
-            .output()
-            .expect("Failed to execute rustc")
-            .stdout,
-    )
-    .expect("Failed to parse rustc output: not UTF-8");
+    let rustc_output = Command::new("cargo")
+        .arg("+nightly")
+        .arg("rustc")
+        .arg("--profile=check")
+        .arg("--")
+        .arg("-Z")
+        .arg("unpretty=hir")
+        .current_dir(&crate_info.crate_root())
+        .output()
+        .expect("Failed to execute rustc");
+
+    if !rustc_output.status.success() {
+        // Unfortunately, this way of printing does not preserve colors
+        eprintln!("{}", String::from_utf8(rustc_output.stderr).unwrap());
+        panic!("rustc failed");
+    }
+
+    let code_str: String =
+        String::from_utf8(rustc_output.stdout).expect("Failed to parse rustc output: not UTF-8");
 
     // Parse the file into a syntax tree.
     let syntax_tree: syn::File = syn::parse_str(&code_str).expect(&format!(
