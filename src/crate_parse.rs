@@ -57,12 +57,31 @@ impl CrateInfo {
     }
 
     pub fn fuzz_dir(&self) -> std::io::Result<PathBuf> {
-        let fuzz_dir_path = self.crate_root.join("fuzz").join("fuzz_targets");
+        let fuzz_dir_path = self.crate_root.join("fuzz");
+        let fuzz_targets_dir_path = self.crate_root.join("fuzz").join("fuzz_targets");
         match std::fs::create_dir(&fuzz_dir_path) {
-            Ok(_) => Ok(fuzz_dir_path),
+            Ok(_) => match std::fs::create_dir(&fuzz_targets_dir_path) {
+                Ok(_) => Ok(fuzz_targets_dir_path),
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::AlreadyExists {
+                        Ok(fuzz_targets_dir_path)
+                    } else {
+                        Err(e)
+                    }
+                }
+            },
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    Ok(fuzz_dir_path)
+                    match std::fs::create_dir(&fuzz_targets_dir_path) {
+                        Ok(_) => Ok(fuzz_targets_dir_path),
+                        Err(e) => {
+                            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                                Ok(fuzz_targets_dir_path)
+                            } else {
+                                Err(e)
+                            }
+                        }
+                    }
                 } else {
                     Err(e)
                 }
