@@ -1,12 +1,12 @@
+use auto_fuzz_test::FnVisitor;
+use quote::quote;
 use std::fmt::Write;
 use std::io;
 use std::io::Read;
 use syn;
-use syn::{visit::Visit};
+use syn::token::{Async, Unsafe};
+use syn::visit::Visit;
 use syn::{FnArg, FnDecl, Ident, Type};
-use syn::token::{Unsafe, Async};
-use quote::quote;
-use auto_fuzz_test::FnVisitor;
 
 /// Running this on an entire crate:
 /// `cargo +nightly rustc --profile=check -- -Z unpretty=hir | gen_proptest_boilerplate`
@@ -17,9 +17,15 @@ fn main() -> io::Result<()> {
     let stdin = io::stdin();
     stdin.lock().read_to_string(&mut code)?;
 
-    let syntax_tree: syn::File = syn::parse_str(&code).expect("Failed to parse input. Is it Rust code?");
+    let syntax_tree: syn::File =
+        syn::parse_str(&code).expect("Failed to parse input. Is it Rust code?");
     // function print_a_test doesn't care about some of the parameters, so we throw them away here
-    let callback = |this: Option<&Type>, ident: &Ident, decl: &FnDecl, unsafety: &Option<Unsafe>, asyncness: &Option<Async>, _: &()| {
+    let callback = |this: Option<&Type>,
+                    ident: &Ident,
+                    decl: &FnDecl,
+                    unsafety: &Option<Unsafe>,
+                    asyncness: &Option<Async>,
+                    _: &()| {
         // Unsafe functions cannot have fuzzing harnesses generated automatically,
         // since it's valid for them to crash for some inputs.
         // Async functions are simply not supported for now.
@@ -33,32 +39,57 @@ fn main() -> io::Result<()> {
     // split the template around where the generated functions go
     let (prefix, suffix) = {
         let mut template_split = FUZZING_HARNESS_TEMPLATE.split("{0}");
-        (template_split.next().unwrap(), template_split.next().expect("need '{0}' in template"))
+        (
+            template_split.next().unwrap(),
+            template_split.next().expect("need '{0}' in template"),
+        )
     };
 
     // print everything in sequence
     print!("{}", prefix);
-    FnVisitor{callback: Box::new(callback), context: ()}.visit_file(&syntax_tree);
+    FnVisitor {
+        callback: Box::new(callback),
+        context: (),
+    }
+    .visit_file(&syntax_tree);
     print!("{}", suffix);
 
     Ok(())
 }
 
-fn write_fn_invocation(mut result: &mut Write, this: Option<&Type>, ident: &Ident, decl: &FnDecl) -> Result<(), std::fmt::Error> {
+fn write_fn_invocation(
+    mut result: &mut dyn Write,
+    this: Option<&Type>,
+    ident: &Ident,
+    decl: &FnDecl,
+) -> Result<(), std::fmt::Error> {
     // print creation of variables
-    writeln!(&mut result, "    // create input data for specific function from random bytes")?;
+    writeln!(
+        &mut result,
+        "    // create input data for specific function from random bytes"
+    )?;
     if let Some(self_type) = &this {
-        writeln!(&mut result, "    let fuzz_self = {}::arbitrary(&mut read_rng);", quote!(#self_type))?;
+        writeln!(
+            &mut result,
+            "    let fuzz_self = {}::arbitrary(&mut read_rng);",
+            quote!(#self_type)
+        )?;
     }
     let mut arg_numbers: Vec<usize> = Vec::new();
     for (num, a) in decl.inputs.iter().enumerate() {
         if let FnArg::Captured(a) = a {
             let pat = &a.pat;
             let arg_type = &a.ty;
-            writeln!(&mut result, "    let fuzz_arg_{} = {}::arbitrary(&mut read_rng); // {}", num, quote!(#arg_type), quote!(#pat))?;
+            writeln!(
+                &mut result,
+                "    let fuzz_arg_{} = {}::arbitrary(&mut read_rng); // {}",
+                num,
+                quote!(#arg_type),
+                quote!(#pat)
+            )?;
             arg_numbers.push(num);
         }
-    };
+    }
     // print actual invocation of the function
     write!(&mut result, "\n    // invoke function\n    ")?;
     if this.is_some() {
@@ -67,7 +98,9 @@ fn write_fn_invocation(mut result: &mut Write, this: Option<&Type>, ident: &Iden
     write!(&mut result, "{}(", ident)?;
     let mut is_first_argument = true;
     for arg_num in arg_numbers {
-        if ! is_first_argument {write!(&mut result, ",")?};
+        if !is_first_argument {
+            write!(&mut result, ",")?
+        };
         is_first_argument = false;
         write!(&mut result, "fuzz_arg_{}", arg_num)?;
     }

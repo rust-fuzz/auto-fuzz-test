@@ -16,12 +16,15 @@ impl CrateInfo {
             return None;
         }
         let mut entries = path.read_dir().ok()?;
-        if entries.any(|result| result.map(|entry| entry.file_name().to_string_lossy()
-                                            == "Cargo.toml").unwrap_or(false)) {
+        if entries.any(|result| {
+            result
+                .map(|entry| entry.file_name().to_string_lossy() == "Cargo.toml")
+                .unwrap_or(false)
+        }) {
             if let Some(crate_name) = parse_crate_name(&path.join("Cargo.toml")) {
                 Some(CrateInfo {
                     crate_root: path.to_path_buf(),
-                    crate_name: crate_name
+                    crate_name: crate_name,
                 })
             } else {
                 None
@@ -54,12 +57,31 @@ impl CrateInfo {
     }
 
     pub fn fuzz_dir(&self) -> std::io::Result<PathBuf> {
-        let fuzz_dir_path = self.crate_root.join("fuzz").join("fuzz_targets");
+        let fuzz_dir_path = self.crate_root.join("fuzz");
+        let fuzz_targets_dir_path = self.crate_root.join("fuzz").join("fuzz_targets");
         match std::fs::create_dir(&fuzz_dir_path) {
-            Ok(_) => Ok(fuzz_dir_path),
+            Ok(_) => match std::fs::create_dir(&fuzz_targets_dir_path) {
+                Ok(_) => Ok(fuzz_targets_dir_path),
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::AlreadyExists {
+                        Ok(fuzz_targets_dir_path)
+                    } else {
+                        Err(e)
+                    }
+                }
+            },
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    Ok(fuzz_dir_path)
+                    match std::fs::create_dir(&fuzz_targets_dir_path) {
+                        Ok(_) => Ok(fuzz_targets_dir_path),
+                        Err(e) => {
+                            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                                Ok(fuzz_targets_dir_path)
+                            } else {
+                                Err(e)
+                            }
+                        }
+                    }
                 } else {
                     Err(e)
                 }
@@ -71,11 +93,20 @@ impl CrateInfo {
 fn parse_crate_name(cargo_toml_path: &Path) -> Option<String> {
     let cargo_bytes = {
         let mut cargo_bytes = Vec::new();
-        File::open(cargo_toml_path).ok()?.read_to_end(&mut cargo_bytes).ok()?;
+        File::open(cargo_toml_path)
+            .ok()?
+            .read_to_end(&mut cargo_bytes)
+            .ok()?;
         cargo_bytes
     };
 
     let cargo_toml: TomlValue = toml::from_slice(&cargo_bytes).ok()?;
 
-    Some(cargo_toml.get("package")?.get("name")?.as_str()?.to_string())
+    Some(
+        cargo_toml
+            .get("package")?
+            .get("name")?
+            .as_str()?
+            .to_string(),
+    )
 }
