@@ -10,7 +10,7 @@ use quote::quote;
 use syn;
 use syn::token::{Async, Unsafe};
 use syn::visit::Visit;
-use syn::{FnArg, FnDecl, Ident, Type};
+use syn::{FnArg, punctuated::Punctuated, token::Comma, Ident, Type};
 
 fn main() -> io::Result<()> {
     // Make sure at least one path was provided.
@@ -91,7 +91,7 @@ fn main() -> io::Result<()> {
     // throw them away here.
     let callback = |this: Option<&Type>,
                     ident: &Ident,
-                    decl: &FnDecl,
+                    inputs: &Punctuated<FnArg,_>,
                     unsafety: &Option<Unsafe>,
                     asyncness: &Option<Async>,
                     crate_info: &CrateInfo| {
@@ -109,7 +109,7 @@ fn main() -> io::Result<()> {
                 .unwrap(),
             );
             println!("{:?}", ident);
-            write_fn_invocation(&mut fn_inv, this, ident, decl, crate_info.crate_name()).unwrap();
+            write_fn_invocation(&mut fn_inv, this, ident, inputs, crate_info.crate_name()).unwrap();
         }
     };
 
@@ -125,7 +125,7 @@ fn write_fn_invocation(
     mut result: &mut dyn Write,
     this: Option<&Type>,
     ident: &Ident,
-    decl: &FnDecl,
+    inputs: &Punctuated<FnArg,Comma>,
     crate_name: &str,
 ) -> Result<(), std::io::Error> {
     // split the template around where the generated functions go
@@ -169,10 +169,10 @@ fn write_fn_invocation(
         )?;
     }
     let mut arg_numbers: Vec<usize> = Vec::new();
-    for (num, a) in decl.inputs.iter().enumerate() {
-        if let FnArg::Captured(a) = a {
-            let pat = &a.pat;
-            let arg_type = &a.ty;
+    for (num, a) in inputs.iter().enumerate() {
+        if let FnArg::Typed(a) = a {
+            let pat = &*a.pat;
+            let arg_type = &*a.ty;
             writeln!(
                 &mut result,
                 "    let fuzz_arg_{} = {}::arbitrary(&mut read_rng); // {}",

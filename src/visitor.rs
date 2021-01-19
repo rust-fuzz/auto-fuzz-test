@@ -1,9 +1,9 @@
 use syn::token::{Async, Unsafe};
-use syn::{visit::Visit, FnDecl, Ident, ImplItem, ItemFn, ItemImpl, Type};
+use syn::{visit::Visit, punctuated::Punctuated, FnArg, Ident, token::Comma, ImplItem, ItemFn, ItemImpl, Type};
 
 pub struct FnVisitor<T> {
     pub callback:
-        Box<dyn FnMut(Option<&Type>, &Ident, &FnDecl, &Option<Unsafe>, &Option<Async>, &T) -> ()>,
+        Box<dyn FnMut(Option<&Type>, &Ident, &Punctuated<FnArg,Comma>, &Option<Unsafe>, &Option<Async>, &T) -> ()>,
     pub context: T,
 }
 
@@ -13,10 +13,10 @@ impl<'ast, T> Visit<'ast> for FnVisitor<T> {
     fn visit_item_fn(&mut self, f: &'ast ItemFn) {
         (self.callback)(
             None,
-            &f.ident,
-            &*f.decl,
-            &f.unsafety,
-            &f.asyncness,
+            &f.sig.ident,
+            &f.sig.inputs,
+            &f.sig.unsafety,
+            &f.sig.asyncness,
             &self.context,
         );
         syn::visit::visit_item_fn(self, f);
@@ -28,7 +28,7 @@ impl<'ast, T> Visit<'ast> for FnVisitor<T> {
                 (self.callback)(
                     Some(self_type),
                     &f.sig.ident,
-                    &f.sig.decl,
+                    &f.sig.inputs,
                     &f.sig.unsafety,
                     &f.sig.asyncness,
                     &self.context,

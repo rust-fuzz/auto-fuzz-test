@@ -5,6 +5,6 @@ authors = ["Eh2406 <YeomanYaacov@gmail.com>", "Sergey \"Shnatsel\" Davidoff <shn
 edition = "2018"
 
 [dependencies]
-quote = "0.6.11"
-syn = {version="0.15.26", features = ["full", "visit"] }
+quote = "1.0.8"
+syn = {version="1.0.58", features = ["full", "visit"] }
 toml = "0.5"
