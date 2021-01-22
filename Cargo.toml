@@ -1,10 +1,15 @@
 [package]
 name = "auto-fuzz-test"
 version = "0.1.0"
-authors = ["Eh2406 <YeomanYaacov@gmail.com>", "Sergey \"Shnatsel\" Davidoff <shnatsel@gmail.com>"]
+authors = ["Eh2406 <YeomanYaacov@gmail.com>", "Sergey \"Shnatsel\" Davidoff <shnatsel@gmail.com>","Eugene Lomov <eugene.v.lomov@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 quote = "1.0.8"
-syn = {version="1.0.58", features = ["full", "visit"] }
+syn = {version="1.0.58", features = ["full", "visit", "parsing", "extra-traits"] }
 toml = "0.5"
+proc-macro2 = "1.0.24"
+
+[lib]
+proc-macro = true
+
