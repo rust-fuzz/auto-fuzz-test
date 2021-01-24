@@ -3,20 +3,23 @@ extern crate syn;
 #[macro_use]
 extern crate quote;
 use proc_macro2::TokenStream;
+use std::env;
+use std::fs;
 use syn::FnArg::Typed;
 use syn::__private::Span;
 use syn::{Expr, Fields, Ident, ItemFn, Member, Pat, Stmt, Type};
+mod crate_parse;
 
 #[proc_macro_attribute]
 pub fn create_cargofuzz_harness(
-    _: proc_macro::TokenStream,
+    attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let output = transform_stream(input);
+    let output = transform_stream(attr, input);
     proc_macro::TokenStream::from(output)
 }
 
-fn transform_stream(input: proc_macro::TokenStream) -> TokenStream {
+fn transform_stream(attr: proc_macro::TokenStream, input: proc_macro::TokenStream) -> TokenStream {
     // By now, we can parse only standalone functions
     let function: ItemFn = syn::parse(input).unwrap();
 
@@ -37,6 +40,7 @@ fn transform_stream(input: proc_macro::TokenStream) -> TokenStream {
 
     let mut arg_struct: syn::ItemStruct = syn::parse_str(
         "#[derive(Arbitrary)]
+        #[derive(Debug)]
             pub struct fuzz {a:u32}",
     )
     .unwrap();
@@ -65,6 +69,7 @@ fn transform_stream(input: proc_macro::TokenStream) -> TokenStream {
     }
     // TODO: Better error messages
 
+    // Struct ident generation
     arg_struct.ident = Ident::new(
         &("__fuzz_struct_".to_owned() + &function.sig.ident.to_string()),
         Span::call_site(),
@@ -77,6 +82,7 @@ fn transform_stream(input: proc_macro::TokenStream) -> TokenStream {
     )
     .unwrap();
 
+    // Fuzing harness input type
     if let Typed(i) = fuzzing_harness.sig.inputs.iter_mut().next().unwrap() {
         if let Type::Path(typ) = &mut *i.ty {
             typ.path.segments.iter_mut().next().unwrap().ident = arg_struct.ident.clone();
@@ -84,17 +90,20 @@ fn transform_stream(input: proc_macro::TokenStream) -> TokenStream {
         }
     }
 
+    // Fuzzing harness ident
     fuzzing_harness.sig.ident = Ident::new(
         &("__fuzz_".to_owned() + &function.sig.ident.to_string()),
         Span::call_site(),
     );
 
+    // Function call inside fuzzing harness
     if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzzing_harness.block.stmts[0] {
         if let Expr::Path(path) = &mut *fn_call.func {
             path.path.segments.iter_mut().next().unwrap().ident = function.sig.ident.clone();
         }
     }
 
+    // Arguments for internal function call
     if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzzing_harness.block.stmts[0] {
         let args = &mut fn_call.args;
         let default_field = args.pop().unwrap().into_value();
@@ -104,18 +113,20 @@ fn transform_stream(input: proc_macro::TokenStream) -> TokenStream {
                 if let Expr::Field(ref mut f) = new_field {
                     if let Member::Named(name) = &mut f.member {
                         *name = field.ident.clone().unwrap();
-                        //*name = field.ident.unwrap();
-                        //dbg!(&name);
                     }
                 }
-                //dbg!(&field.ident);
-                //dbg!(&new_field);
                 args.push(new_field);
             }
-            //dbg!(&args);
         }
-        //dbg!(&default_field);
     }
+
+    let crate_info = crate_parse::CrateInfo::from_root(&env::current_dir().unwrap()).unwrap();
+
+    let fuzz_dir_path = crate_info.fuzz_dir().unwrap();
+
+
+    let code = crate_parse::write_fn_invocation(&fuzzing_harness.sig.ident,&arg_struct.ident, crate_info.crate_name()).unwrap();
+    fs::write(fuzz_dir_path.join(String::new()+&function.sig.ident.to_string()+".rs"), code);
     quote!(
         #function
       #arg_struct

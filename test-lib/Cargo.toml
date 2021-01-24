@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 auto-fuzz-test = { path = "../"  }
+arbitrary = { version = "0.4", features = ["derive"]  }
