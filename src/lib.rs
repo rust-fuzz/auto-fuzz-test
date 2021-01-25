@@ -120,27 +120,32 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         }
     }
 
-    let crate_info = crate_parse::CrateInfo::from_root(&env::current_dir().unwrap()).unwrap();
+    if !cfg!(fuzzing) {
+        let crate_info = crate_parse::CrateInfo::from_root(&env::current_dir().unwrap()).unwrap();
 
-    let fuzz_dir_path = crate_info.fuzz_dir().unwrap();
+        let fuzz_dir_path = crate_info.fuzz_dir().unwrap();
 
-    let crate_name_underscored = str::replace(crate_info.crate_name(), "-", "_"); // required for `extern crate`
+        let crate_name_underscored = str::replace(crate_info.crate_name(), "-", "_"); // required for `extern crate`
 
-    let crate_ident = Ident::new(&crate_name_underscored, Span::call_site());
+        let crate_ident = Ident::new(&crate_name_underscored, Span::call_site());
 
-    // Writing fzzing harness to file
-    let code = crate_parse::compose_fn_invocation(
-        &fuzzing_harness.sig.ident,
-        &arg_struct.ident,
-        &crate_ident,
-        attr,
-    );
+        // Writing fzzing harness to file
+        let code = crate_parse::compose_fn_invocation(
+            &fuzzing_harness.sig.ident,
+            &arg_struct.ident,
+            &crate_ident,
+            attr,
+        );
 
-    fs::write(
-        fuzz_dir_path.join(String::new() + &function.sig.ident.to_string() + ".rs"),
-        code,
-    );
-    // TODO: Error handing
+        fs::write(
+            fuzz_dir_path.join(String::new() + &function.sig.ident.to_string() + ".rs"),
+            code,
+        )
+        .unwrap();
+        // TODO: Error handing
+
+        crate_info.write_cargo_toml(&function.sig.ident).unwrap();
+    }
 
     quote!(
         #function

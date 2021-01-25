@@ -9,6 +9,7 @@ quote = "1.0.8"
 syn = {version="1.0.58", features = ["full", "visit", "parsing", "extra-traits"] }
 toml = "0.5"
 proc-macro2 = "1.0.24"
+fs3 = "0.5.0"
 
 [lib]
 proc-macro = true
