@@ -15,11 +15,11 @@ pub fn create_cargofuzz_harness(
     attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let output = transform_stream(attr, input);
+    let output = transform_stream(TokenStream::from(attr), input);
     proc_macro::TokenStream::from(output)
 }
 
-fn transform_stream(attr: proc_macro::TokenStream, input: proc_macro::TokenStream) -> TokenStream {
+fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenStream {
     // By now, we can parse only standalone functions
     let function: ItemFn = syn::parse(input).unwrap();
 
@@ -124,9 +124,24 @@ fn transform_stream(attr: proc_macro::TokenStream, input: proc_macro::TokenStrea
 
     let fuzz_dir_path = crate_info.fuzz_dir().unwrap();
 
+    let crate_name_underscored = str::replace(crate_info.crate_name(), "-", "_"); // required for `extern crate`
 
-    let code = crate_parse::write_fn_invocation(&fuzzing_harness.sig.ident,&arg_struct.ident, crate_info.crate_name()).unwrap();
-    fs::write(fuzz_dir_path.join(String::new()+&function.sig.ident.to_string()+".rs"), code);
+    let crate_ident = Ident::new(&crate_name_underscored, Span::call_site());
+
+    // Writing fzzing harness to file
+    let code = crate_parse::compose_fn_invocation(
+        &fuzzing_harness.sig.ident,
+        &arg_struct.ident,
+        &crate_ident,
+        attr,
+    );
+
+    fs::write(
+        fuzz_dir_path.join(String::new() + &function.sig.ident.to_string() + ".rs"),
+        code,
+    );
+    // TODO: Error handing
+
     quote!(
         #function
       #arg_struct
