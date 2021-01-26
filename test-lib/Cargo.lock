@@ -13,10 +13,22 @@ dependencies = [
 name = "auto-fuzz-test"
 version = "0.1.0"
 dependencies = [
+ "cargo_toml",
  "fs3",
  "proc-macro2",
  "quote",
  "syn",
+ "toml",
+]
+
+[[package]]
+name = "cargo_toml"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "513d17226888c7b8283ac02a1c1b0d8a9d4cbf6db65dfadb79f598f5d7966fe9"
+dependencies = [
+ "serde",
+ "serde_derive",
  "toml",
 ]
 
@@ -95,6 +107,17 @@ name = "serde"
 version = "1.0.120"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "166b2349061381baf54a58e4b13c89369feb0ef2eaa57198899e2312aac30aab"
+
+[[package]]
+name = "serde_derive"
+version = "1.0.121"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3fcab8778dc651bc65cfab2e4eb64996f3c912b74002fb379c94517e1f27c46"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "syn"
