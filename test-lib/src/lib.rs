@@ -4,8 +4,8 @@ extern crate auto_fuzz_test;
 extern crate arbitrary;
 
 #[create_cargofuzz_harness]
-pub fn bool_to_num(a: String) -> usize {
-    a.len()
+pub fn bool_to_num(string: String) -> usize {
+    string.len()
 }
 //impl MyString {
 //fn h(&self, d: u8) {}

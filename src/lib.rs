@@ -8,6 +8,7 @@ use std::fs;
 use syn::FnArg::Typed;
 use syn::__private::Span;
 use syn::{Expr, Fields, Ident, ItemFn, Member, Pat, Stmt, Type};
+use syn::Expr::Reference;
 mod crate_parse;
 
 #[proc_macro_attribute]
@@ -32,10 +33,10 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         function.sig.unsafety, None,
         "unsafe functions can not be fuzzed automatically."
     );
-    assert!(
-        function.sig.generics.params.is_empty(),
-        "Generics are not currently supported."
-    );
+    //assert!(
+        //function.sig.generics.params.is_empty(),
+        //"Generics are not currently supported."
+    //);
     //TODO: tests
 
     let mut arg_struct: syn::ItemStruct = syn::parse_str(
@@ -49,23 +50,27 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         let default_variable = fields.named.pop().unwrap().into_value();
         for item in function.sig.inputs.iter() {
             if let Typed(i) = item {
-                if let Pat::Ident(id) = &*i.pat {
+                if let Pat::Ident(id) = dbg!(&*i.pat) {
                     let mut variable = default_variable.clone();
                     variable.ident = Some(id.ident.clone());
                     variable.ty = *i.ty.clone();
                     fields.named.push(variable);
+                //} else if let Reference(i) = item {
+                    //if let Pat::Ident(id) = dbg!(&*i.pat) {
+                        //let mut variable = default_variable.clone();
+                        //variable.ident = Some(id.ident.clone());
+                        //variable.ty = *i.ty.clone();
+                        //fields.named.push(variable);
+                    //}
                 } else {
                     panic!("Such functions are no supported yet.");
-                    //compile_error!("Wrong syn::Type enum");
                 }
             } else {
                 panic!("Such functions are no supported yet.");
-                //compile_error!("Wrong syn::FnArg enum");
             }
         }
     } else {
         panic!("Such functions are no supported yet.");
-        //compile_error!("Wrong syn::Fields enum");
     }
     // TODO: Better error messages
 
