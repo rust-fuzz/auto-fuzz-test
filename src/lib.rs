@@ -22,7 +22,7 @@ pub fn create_cargofuzz_harness(
 
 fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenStream {
     // By now, we can parse only standalone functions
-    let function: ItemFn = syn::parse(input).unwrap();
+    let function: ItemFn = syn::parse(input).expect("Failed to parse input");
 
     // Checking that the function meets the requirements
     assert_eq!(
@@ -34,8 +34,8 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         "unsafe functions can not be fuzzed automatically."
     );
     //assert!(
-        //function.sig.generics.params.is_empty(),
-        //"Generics are not currently supported."
+    //function.sig.generics.params.is_empty(),
+    //"Generics are not currently supported."
     //);
     //TODO: tests
 
@@ -59,7 +59,7 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         let args = &mut fn_call.args;
         let default_borrowed_field = args.pop().unwrap().into_value();
         let default_field = args.pop().unwrap().into_value();
-        
+
         // Struct fields generation
         if let Fields::Named(ref mut fields) = arg_struct.fields {
             let default_variable = fields.named.pop().unwrap().into_value();
@@ -75,10 +75,10 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                     let mut new_field = default_borrowed_field.clone();
                                     if let Expr::Reference(ref mut new_rf) = new_field {
                                         // Copying borrow mutability
-                                        new_rf.mutability = rf.mutability.clone();
+                                        new_rf.mutability = rf.mutability;
                                         // Copying variable ident
                                         if let Expr::Field(ref mut new_subfield) = *new_rf.expr {
-                                           new_subfield.member = Member::Named(id.ident.clone());
+                                            new_subfield.member = Member::Named(id.ident.clone());
                                         } else {
                                             panic!("Such functions are no supported yet.");
                                         }
@@ -87,12 +87,12 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                     }
                                     // Pushing arguments to the function call
                                     args.push(new_field);
-                                    // Returning vaariable type for the struct field
+                                    // Returning variable type for the struct field
                                     Type::Path(path)
                                 } else {
                                     panic!("Such functions are no supported yet.");
                                 }
-                            },
+                            }
                             Type::Path(path) => {
                                 let mut new_field = default_field.clone();
                                 if let Expr::Field(ref mut f) = new_field {
@@ -102,11 +102,10 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                 }
                                 args.push(new_field);
                                 Type::Path(path)
-                            },
+                            }
                             _ => {
                                 panic!("Such functions are no supported yet.");
                             }
-
                         };
                         fields.named.push(variable);
                     } else {
@@ -149,9 +148,13 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         }
     }
 
-    let crate_info = crate_parse::CrateInfo::from_root(&env::current_dir().unwrap()).unwrap();
+    let crate_info = crate_parse::CrateInfo::from_root(&env::current_dir().expect(
+        "Failed to obtain
+            project root dir",
+    ))
+    .expect("Failed to obtain crate info");
 
-    let fuzz_dir_path = crate_info.fuzz_dir().unwrap();
+    let fuzz_dir_path = crate_info.fuzz_dir().expect("Failed to create fuzz dir");
 
     let crate_name_underscored = str::replace(crate_info.crate_name(), "-", "_"); // required for `extern crate`
 
@@ -169,10 +172,12 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         fuzz_dir_path.join(String::new() + &function.sig.ident.to_string() + ".rs"),
         code,
     )
-        .unwrap();
+    .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
     // TODO: Error handing
 
-    crate_info.write_cargo_toml(&function.sig.ident).unwrap();
+    crate_info
+        .write_cargo_toml(&function.sig.ident)
+        .expect("Failed to update Cargo.toml");
 
     quote!(
         #function
