@@ -125,6 +125,8 @@ impl CrateInfo {
                                 .join("Cargo.toml"),
                         )?;
                     file.lock_exclusive()?;
+                    
+                    // Checking, that we are not going to duplicate [[bin]] targets
                     let mut buffer = String::new();
                     file.read_to_string(&mut buffer)?;
                     let parts = buffer.split("\n\n");
