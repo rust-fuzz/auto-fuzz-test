@@ -7,7 +7,7 @@ use std::env;
 use std::fs;
 use syn::FnArg::Typed;
 use syn::__private::Span;
-use syn::{Expr, Fields, Ident, ItemFn, Member, Pat, Stmt, Type};
+use syn::{Expr, Fields, GenericArgument, Ident, ItemFn, Member, Pat, PathArguments, Stmt, Type};
 
 mod crate_parse;
 
@@ -43,13 +43,13 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
     let mut arg_struct: syn::ItemStruct = syn::parse_str(
         "#[derive(Arbitrary)]
         #[derive(Debug)]
-            pub struct fuzz {a:u32}",
+            pub struct fuzz {a:u32, b:Box<u64>}",
     )
     .unwrap();
 
     let mut fuzzing_harness: syn::ItemFn = syn::parse_str(
         "pub fn fuzz(mut input:MyStruct) {
-           foo(input.a, &mut input.b); 
+           foo(input.a, &mut *input.b); 
         }",
     )
     .unwrap();
@@ -62,23 +62,59 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
 
         // Struct fields generation
         if let Fields::Named(ref mut fields) = arg_struct.fields {
+            let default_borrowed_variable = fields.named.pop().unwrap().into_value();
             let default_variable = fields.named.pop().unwrap().into_value();
             for item in function.sig.inputs.iter() {
                 if let Typed(i) = item {
                     if let Pat::Ident(id) = &*i.pat {
                         // `variable` is a new struct field
-                        let mut variable = default_variable.clone();
-                        variable.ident = Some(id.ident.clone());
-                        variable.ty = match *i.ty.clone() {
+                        match *i.ty.clone() {
                             Type::Reference(rf) => {
                                 if let Type::Path(path) = *rf.elem.clone() {
+                                    // `variable` is a new struct field
+                                    let mut variable = default_borrowed_variable.clone();
+                                    variable.ident = Some(id.ident.clone());
+
                                     let mut new_field = default_borrowed_field.clone();
                                     if let Expr::Reference(ref mut new_rf) = new_field {
                                         // Copying borrow mutability
                                         new_rf.mutability = rf.mutability;
                                         // Copying variable ident
-                                        if let Expr::Field(ref mut new_subfield) = *new_rf.expr {
-                                            new_subfield.member = Member::Named(id.ident.clone());
+                                        if let Expr::Unary(ref mut new_subfield) = *new_rf.expr {
+                                            if let Expr::Field(ref mut new_unary_subfield) =
+                                                *new_subfield.expr
+                                            {
+                                                new_unary_subfield.member =
+                                                    Member::Named(id.ident.clone());
+                                            } else {
+                                                panic!("Such functions are no supported yet.");
+                                            }
+                                        } else {
+                                            panic!("Such functions are no supported yet.");
+                                        }
+                                    } else {
+                                        panic!("Such functions are no supported yet.");
+                                    }
+
+                                    // Copying variable type
+                                    if let Type::Path(ref mut new_path) = variable.ty {
+                                        if let PathArguments::AngleBracketed(
+                                            ref mut new_generic_arg,
+                                        ) = new_path
+                                            .path
+                                            .segments
+                                            .iter_mut()
+                                            .next()
+                                            .unwrap()
+                                            .arguments
+                                        {
+                                            if let GenericArgument::Type(ref mut new_subpath) =
+                                                new_generic_arg.args.iter_mut().next().unwrap()
+                                            {
+                                                *new_subpath = Type::Path(path);
+                                            } else {
+                                                panic!("Such functions are no supported yet.");
+                                            }
                                         } else {
                                             panic!("Such functions are no supported yet.");
                                         }
@@ -87,27 +123,32 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                     }
                                     // Pushing arguments to the function call
                                     args.push(new_field);
-                                    // Returning variable type for the struct field
-                                    Type::Path(path)
+                                    // Pushing variable type for the struct field
+                                    fields.named.push(variable);
                                 } else {
                                     panic!("Such functions are no supported yet.");
                                 }
                             }
                             Type::Path(path) => {
+                                // `variable` is a new struct field
+                                let mut variable = default_variable.clone();
+                                variable.ident = Some(id.ident.clone());
                                 let mut new_field = default_field.clone();
                                 if let Expr::Field(ref mut f) = new_field {
                                     f.member = Member::Named(id.ident.clone());
                                 } else {
                                     panic!("Such functions are no supported yet.");
                                 }
+                                variable.ty = Type::Path(path);
+                                // Pushing arguments to the function call
                                 args.push(new_field);
-                                Type::Path(path)
+                                // Pushing variable type for the struct field
+                                fields.named.push(variable);
                             }
                             _ => {
                                 panic!("Such functions are no supported yet.");
                             }
                         };
-                        fields.named.push(variable);
                     } else {
                         panic!("Such functions are no supported yet.");
                     }
@@ -118,6 +159,8 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         } else {
             panic!("Such functions are no supported yet.");
         }
+    } else {
+        panic!("Such functions are no supported yet.");
     }
     // TODO: Better error messages
 
