@@ -91,8 +91,10 @@ impl CrateInfo {
 
                 write!(
                     file,
-                    "{}{}{}",
+                    "{}{}{}{}{}",
                     &CARGO_TOML_TEMPLATE_PREFIX,
+                    &self.crate_name(),
+                    &CARGO_TOML_TEMPLATE_INFIX,
                     &self.crate_name(),
                     &CARGO_TOML_TEMPLATE_POSTFIX
                 )?;
@@ -220,7 +222,7 @@ pub fn compose_fn_invocation(
 
 const CARGO_TOML_TEMPLATE_PREFIX: &str = r#"[package]
 name = ""#;
-const CARGO_TOML_TEMPLATE_POSTFIX: &str = r#"-fuzz"
+const CARGO_TOML_TEMPLATE_INFIX: &str = r#"-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
 publish = false
@@ -232,13 +234,15 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.3"
 
-[dependencies.test-lib]
+[dependencies."#;
+const CARGO_TOML_TEMPLATE_POSTFIX: &str = r#"]
 path = ".."
 
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
 "#;
+
 const TARGET_TEMPLATE_PREFIX: &str = r#"
 [[bin]]
 name = ""#;
