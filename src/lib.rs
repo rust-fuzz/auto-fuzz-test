@@ -34,7 +34,7 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
         "unsafe functions can not be fuzzed automatically."
     );
     //assert!(
-    //function.sig.generics.params.is_empty(),
+    //<Generic type parameter>,
     //"Generics are not currently supported."
     //);
     //TODO: tests
