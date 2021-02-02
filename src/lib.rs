@@ -62,8 +62,22 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
 
         // Struct fields generation
         if let Fields::Named(ref mut fields) = arg_struct.fields {
-            let default_borrowed_variable = fields.named.pop().unwrap().into_value();
-            let default_variable = fields.named.pop().unwrap().into_value();
+            let default_boxed_variable = fields
+                .named
+                .pop()
+                .expect(
+                    "Struct template must contain
+                Boxed variable",
+                )
+                .into_value();
+            let default_variable = fields
+                .named
+                .pop()
+                .expect(
+                    "Struct template must contain
+                unBoxed variable",
+                )
+                .into_value();
             for item in function.sig.inputs.iter() {
                 if let Typed(i) = item {
                     if let Pat::Ident(id) = &*i.pat {
@@ -72,7 +86,7 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                             Type::Reference(rf) => {
                                 if let Type::Path(path) = *rf.elem.clone() {
                                     // `variable` is a new struct field
-                                    let mut variable = default_borrowed_variable.clone();
+                                    let mut variable = default_boxed_variable.clone();
                                     variable.ident = Some(id.ident.clone());
 
                                     let mut new_field = default_borrowed_field.clone();
@@ -87,13 +101,13 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                                 new_unary_subfield.member =
                                                     Member::Named(id.ident.clone());
                                             } else {
-                                                panic!("Such functions are no supported yet.");
+                                                panic!("Wrong borrowed field template");
                                             }
                                         } else {
-                                            panic!("Such functions are no supported yet.");
+                                            panic!("Wrong borrowed field template");
                                         }
                                     } else {
-                                        panic!("Such functions are no supported yet.");
+                                        panic!("Wrong borrowed field template");
                                     }
 
                                     // Copying variable type
@@ -113,20 +127,22 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                             {
                                                 *new_subpath = Type::Path(path);
                                             } else {
-                                                panic!("Such functions are no supported yet.");
+                                                panic!("Wrong boxed variable template");
                                             }
                                         } else {
-                                            panic!("Such functions are no supported yet.");
+                                            panic!("Wrong boxed variable template");
                                         }
                                     } else {
-                                        panic!("Such functions are no supported yet.");
+                                        panic!("Wrong boxed variable template");
                                     }
                                     // Pushing arguments to the function call
                                     args.push(new_field);
                                     // Pushing variable type for the struct field
                                     fields.named.push(variable);
                                 } else {
-                                    panic!("Such functions are no supported yet.");
+                                    unimplemented!(
+                                        "Only one level borrows are currently supported."
+                                    );
                                 }
                             }
                             Type::Path(path) => {
@@ -137,7 +153,7 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                 if let Expr::Field(ref mut f) = new_field {
                                     f.member = Member::Named(id.ident.clone());
                                 } else {
-                                    panic!("Such functions are no supported yet.");
+                                    panic!("Wrong unborrowed field template");
                                 }
                                 variable.ty = Type::Path(path);
                                 // Pushing arguments to the function call
@@ -146,21 +162,21 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                 fields.named.push(variable);
                             }
                             _ => {
-                                panic!("Such functions are no supported yet.");
+                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
                             }
                         };
                     } else {
-                        panic!("Such functions are no supported yet.");
+                        unimplemented!("Only simple arguments are currently supported.");
                     }
                 } else {
-                    panic!("Such functions are no supported yet.");
+                    unimplemented!("Only standalone functions are currently supported.");
                 }
             }
         } else {
-            panic!("Such functions are no supported yet.");
+            panic!("Struct template must contain named fields");
         }
     } else {
-        panic!("Such functions are no supported yet.");
+        panic!("Template must contain the function call.");
     }
     // TODO: Better error messages
 
