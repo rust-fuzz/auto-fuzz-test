@@ -223,3 +223,142 @@ pub fn fuzz_harness(function: &ItemFn, crate_ident: &Ident, attr: TokenStream) -
 
     code
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_struct_no_borrows() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool) -> u64 {
+                if crash_on_overflow {
+                    a.checked_mul(b).expect("Overflow has occurred")
+                } else {
+                    a.overflowing_mul(b).0
+                }
+            }
+        })
+        .unwrap();
+
+        let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
+            #[derive(Arbitrary)]
+            #[derive(Debug)]
+            pub struct __fuzz_struct_maybe_checked_mul {
+                a: u64,
+                b: u64,
+                crash_on_overflow: bool
+            }
+        })
+        .unwrap();
+
+        assert_eq!(fuzz_struct(&function), fuzz_struct_needed);
+    }
+
+    #[test]
+    fn test_function_no_borrows() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool) -> u64 {
+                if crash_on_overflow {
+                    a.checked_mul(b).expect("Overflow has occurred")
+                } else {
+                    a.overflowing_mul(b).0
+                }
+            }
+        })
+        .unwrap();
+
+        let fuzz_function_needed: ItemFn = syn::parse2(quote! {
+            pub fn __fuzz_maybe_checked_mul(mut input:__fuzz_struct_maybe_checked_mul) {
+                maybe_checked_mul(input.a, input.b, input.crash_on_overflow);
+            }
+        })
+        .unwrap();
+
+        assert_eq!(fuzz_function(&function), fuzz_function_needed);
+    }
+
+    #[test]
+    fn test_struct_borrowed() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul_borrowed(a: &mut u64, b: u64, crash_on_overflow: bool) {
+                if crash_on_overflow {
+                    *a = a.checked_mul(b).expect("Overflow has occurred");
+                } else {
+                    *a = a.overflowing_mul(b).0;
+                }
+            }
+        })
+        .unwrap();
+
+        let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
+            #[derive(Arbitrary)]
+            #[derive(Debug)]
+            pub struct __fuzz_struct_maybe_checked_mul_borrowed {
+                a: Box<u64>,
+                b: u64,
+                crash_on_overflow: bool
+            }
+        })
+        .unwrap();
+
+        assert_eq!(fuzz_struct(&function), fuzz_struct_needed);
+    }
+
+    #[test]
+    fn test_function_borrowed() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul_borrowed(a: &mut u64, b: u64, crash_on_overflow: bool) {
+                if crash_on_overflow {
+                    *a = a.checked_mul(b).expect("Overflow has occurred");
+                } else {
+                    *a = a.overflowing_mul(b).0;
+                }
+            }
+        })
+        .unwrap();
+
+        let fuzz_function_needed: ItemFn = syn::parse2(
+            quote! {
+                pub fn __fuzz_maybe_checked_mul_borrowed(mut input:__fuzz_struct_maybe_checked_mul_borrowed) {
+                    maybe_checked_mul_borrowed(&mut *input.a, input.b, input.crash_on_overflow);
+                }
+            }
+        ).unwrap();
+
+        assert_eq!(fuzz_function(&function), fuzz_function_needed);
+    }
+
+    #[test]
+    fn test_function_harness() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool) -> u64 {
+                if crash_on_overflow {
+                    a.checked_mul(b).expect("Overflow has occurred")
+                } else {
+                    a.overflowing_mul(b).0
+                }
+            }
+        })
+        .unwrap();
+
+        let fuzz_harness_needed: syn::File = syn::parse2(quote! {
+            #![no_main]
+            use libfuzzer_sys::fuzz_target;
+            extern crate test_lib;
+
+            fuzz_target!( |input: test_lib::foo::bar::__fuzz_struct_maybe_checked_mul| {
+                    test_lib::foo::bar::__fuzz_maybe_checked_mul(input);
+                }
+            );
+        })
+        .unwrap();
+
+        let attrs = quote!(foo::bar);
+        let crate_ident = Ident::new("test_lib", Span::call_site());
+        let fuzz_harness_generated: syn::File =
+            syn::parse2(fuzz_harness(&function, &crate_ident, attrs)).unwrap();
+
+        assert_eq!(fuzz_harness_generated, fuzz_harness_needed);
+    }
+}
