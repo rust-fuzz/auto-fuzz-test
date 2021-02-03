@@ -141,7 +141,7 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
                                     fields.named.push(variable);
                                 } else {
                                     unimplemented!(
-                                        "Only one level borrows are currently supported."
+                                        "Sliced arguments."
                                     );
                                 }
                             }
