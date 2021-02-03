@@ -1,6 +1,6 @@
 [package]
 name = "auto-fuzz-test"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Eh2406 <YeomanYaacov@gmail.com>", "Sergey \"Shnatsel\" Davidoff <shnatsel@gmail.com>","Eugene Lomov <eugene.v.lomov@gmail.com>"]
 edition = "2018"
 
