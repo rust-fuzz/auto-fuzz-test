@@ -192,12 +192,16 @@ pub fn fuzz_function(function: &ItemFn) -> ItemFn {
     fuzz_function
 }
 
-pub fn fuzz_harness(
-    function: &Ident,
-    typ: &Ident,
-    crate_ident: &Ident,
-    attr: TokenStream,
-) -> String {
+pub fn fuzz_harness(function: &ItemFn, crate_ident: &Ident, attr: TokenStream) -> TokenStream {
+    let arg_type = Ident::new(
+        &("__fuzz_struct_".to_owned() + &(*function).sig.ident.to_string()),
+        Span::call_site(),
+    );
+    let function_ident = Ident::new(
+        &("__fuzz_".to_owned() + &(*function).sig.ident.to_string()),
+        Span::call_site(),
+    );
+
     let path = {
         if !attr.is_empty() {
             quote!(#crate_ident :: #attr ::)
@@ -212,10 +216,10 @@ pub fn fuzz_harness(
             use libfuzzer_sys::fuzz_target;
             extern crate #crate_ident;
 
-            fuzz_target!(|input: #path #typ| {
-            #path #function (input);
+            fuzz_target!(|input: #path #arg_type| {
+            #path #function_ident (input);
             });
         );
 
-    code.to_string()
+    code
 }

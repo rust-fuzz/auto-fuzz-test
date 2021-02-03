@@ -54,16 +54,11 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
     let crate_ident = Ident::new(&crate_name_underscored, Span::call_site());
 
     // Writing fuzzing harness to file
-    let code = generate::fuzz_harness(
-        &fuzz_function.sig.ident,
-        &fuzz_struct.ident,
-        &crate_ident,
-        attr,
-    );
+    let code = generate::fuzz_harness(&function, &crate_ident, attr);
 
     fs::write(
         fuzz_dir_path.join(String::new() + &function.sig.ident.to_string() + ".rs"),
-        code,
+        code.to_string(),
     )
     .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
     // TODO: Error handing
