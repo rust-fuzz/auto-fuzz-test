@@ -24,21 +24,6 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
     // By now, we can parse only standalone functions
     let function: ItemFn = syn::parse(input).expect("Failed to parse input");
 
-    // Checking that the function meets the requirements
-    assert_eq!(
-        function.sig.asyncness, None,
-        "Can not fuzz async functions."
-    );
-    assert_eq!(
-        function.sig.unsafety, None,
-        "unsafe functions can not be fuzzed automatically."
-    );
-    //assert!(
-    //<Generic type parameter>,
-    //"Generics are not currently supported."
-    //);
-    //TODO: tests
-
     let fuzz_struct = generate::fuzz_struct(&function.sig, None);
     let fuzz_function = generate::fuzz_function(&function.sig, None);
 

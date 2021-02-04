@@ -111,6 +111,21 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<Type>) -> ItemStruct
 }
 
 pub fn fuzz_function(signature: &Signature, impl_type: Option<Type>) -> ItemFn {
+    // Checking that the function meets our requirements
+    assert_eq!(
+        signature.asyncness, None,
+        "Can not fuzz async functions."
+    );
+    assert_eq!(
+        signature.unsafety, None,
+        "unsafe functions can not be fuzzed automatically."
+    );
+    //assert!(
+    //<Generic type parameter>,
+    //"Generics are not currently supported."
+    //);
+    //TODO: tests
+
     // function harness template
     let mut fuzz_function: syn::ItemFn = syn::parse_str(
         "pub fn fuzz(mut input:MyStruct) {
