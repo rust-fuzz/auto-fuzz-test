@@ -39,8 +39,8 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
     //);
     //TODO: tests
 
-    let fuzz_struct = generate::fuzz_struct(&function);
-    let fuzz_function = generate::fuzz_function(&function);
+    let fuzz_struct = generate::fuzz_struct(&function.sig, None);
+    let fuzz_function = generate::fuzz_function(&function.sig, None);
 
     let crate_info = crate_parse::CrateInfo::from_root(
         &env::current_dir().expect("Failed to obtain project root dir"),
@@ -54,7 +54,7 @@ fn transform_stream(attr: TokenStream, input: proc_macro::TokenStream) -> TokenS
     let crate_ident = Ident::new(&crate_name_underscored, Span::call_site());
 
     // Writing fuzzing harness to file
-    let code = generate::fuzz_harness(&function, &crate_ident, attr);
+    let code = generate::fuzz_harness(&function.sig, &crate_ident, attr);
 
     fs::write(
         fuzz_dir_path.join(String::new() + &function.sig.ident.to_string() + ".rs"),

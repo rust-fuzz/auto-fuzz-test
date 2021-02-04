@@ -1,12 +1,12 @@
 use proc_macro2::TokenStream;
-use syn::FnArg::Typed;
+use syn::FnArg;
 use syn::__private::Span;
 use syn::{
-    Expr, Fields, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments, Stmt,
-    Type,
+    Expr, Fields, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
+    Signature, Stmt, Type,
 };
 
-pub fn fuzz_struct(function: &ItemFn) -> ItemStruct {
+pub fn fuzz_struct(signature: &Signature, impl_type: Option<Type>) -> ItemStruct {
     // struct for function arguments template
     let mut fuzz_struct: ItemStruct = syn::parse_str(
         "#[derive(Arbitrary)]
@@ -17,7 +17,7 @@ pub fn fuzz_struct(function: &ItemFn) -> ItemStruct {
 
     // Struct ident generation
     fuzz_struct.ident = Ident::new(
-        &("__fuzz_struct_".to_owned() + &(*function).sig.ident.to_string()),
+        &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
         Span::call_site(),
     );
 
@@ -39,58 +39,68 @@ pub fn fuzz_struct(function: &ItemFn) -> ItemStruct {
                 unBoxed variable",
             )
             .into_value();
-        for item in (*function).sig.inputs.iter() {
-            if let Typed(i) = item {
-                if let Pat::Ident(id) = &*i.pat {
-                    match *i.ty.clone() {
-                        Type::Reference(rf) => {
-                            if let Type::Path(path) = *rf.elem.clone() {
-                                // `variable` is a new struct field
-                                let mut variable = default_boxed_variable.clone();
-                                variable.ident = Some(id.ident.clone());
+        for item in (*signature).inputs.iter() {
+            match item {
+                FnArg::Typed(i) => {
+                    if let Pat::Ident(id) = &*i.pat {
+                        match *i.ty.clone() {
+                            Type::Reference(rf) => {
+                                if let Type::Path(path) = *rf.elem.clone() {
+                                    // `variable` is a new struct field
+                                    let mut variable = default_boxed_variable.clone();
+                                    variable.ident = Some(id.ident.clone());
 
-                                // Copying variable type
-                                if let Type::Path(ref mut new_path) = variable.ty {
-                                    if let PathArguments::AngleBracketed(ref mut new_generic_arg) =
-                                        new_path.path.segments.iter_mut().next().unwrap().arguments
-                                    {
-                                        if let GenericArgument::Type(ref mut new_subpath) =
-                                            new_generic_arg.args.iter_mut().next().unwrap()
+                                    // Copying variable type
+                                    if let Type::Path(ref mut new_path) = variable.ty {
+                                        if let PathArguments::AngleBracketed(
+                                            ref mut new_generic_arg,
+                                        ) = new_path
+                                            .path
+                                            .segments
+                                            .iter_mut()
+                                            .next()
+                                            .unwrap()
+                                            .arguments
                                         {
-                                            *new_subpath = Type::Path(path);
+                                            if let GenericArgument::Type(ref mut new_subpath) =
+                                                new_generic_arg.args.iter_mut().next().unwrap()
+                                            {
+                                                *new_subpath = Type::Path(path);
+                                            } else {
+                                                panic!("Wrong boxed variable template");
+                                            }
                                         } else {
                                             panic!("Wrong boxed variable template");
                                         }
                                     } else {
                                         panic!("Wrong boxed variable template");
                                     }
+                                    // Pushing variable type for the struct field
+                                    fields.named.push(variable);
                                 } else {
-                                    panic!("Wrong boxed variable template");
+                                    unimplemented!("Sliced arguments.");
                                 }
+                            }
+                            Type::Path(path) => {
+                                // `variable` is a new struct field
+                                let mut variable = default_variable.clone();
+                                variable.ident = Some(id.ident.clone());
+                                // Copying variable type
+                                variable.ty = Type::Path(path);
                                 // Pushing variable type for the struct field
                                 fields.named.push(variable);
-                            } else {
-                                unimplemented!("Sliced arguments.");
                             }
-                        }
-                        Type::Path(path) => {
-                            // `variable` is a new struct field
-                            let mut variable = default_variable.clone();
-                            variable.ident = Some(id.ident.clone());
-                            // Copying variable type
-                            variable.ty = Type::Path(path);
-                            // Pushing variable type for the struct field
-                            fields.named.push(variable);
-                        }
-                        _ => {
-                            unimplemented!("Type of the function must be either standalone, or borrowed standalone");
-                        }
-                    };
-                } else {
-                    unimplemented!("Only simple arguments are currently supported.");
+                            _ => {
+                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                            }
+                        };
+                    } else {
+                        unimplemented!("Only simple arguments are currently supported.");
+                    }
                 }
-            } else {
-                unimplemented!("Only standalone functions are currently supported.");
+                FnArg::Receiver(res) => {
+                    unimplemented!("Only standalone functions are currently supported.");
+                }
             }
         }
     } else {
@@ -100,7 +110,7 @@ pub fn fuzz_struct(function: &ItemFn) -> ItemStruct {
     fuzz_struct
 }
 
-pub fn fuzz_function(function: &ItemFn) -> ItemFn {
+pub fn fuzz_function(signature: &Signature, impl_type: Option<Type>) -> ItemFn {
     // function harness template
     let mut fuzz_function: syn::ItemFn = syn::parse_str(
         "pub fn fuzz(mut input:MyStruct) {
@@ -115,62 +125,66 @@ pub fn fuzz_function(function: &ItemFn) -> ItemFn {
         let default_borrowed_field = args.pop().unwrap().into_value();
         let default_field = args.pop().unwrap().into_value();
 
-        for item in (*function).sig.inputs.iter() {
-            if let Typed(i) = item {
-                if let Pat::Ident(id) = &*i.pat {
-                    match *i.ty.clone() {
-                        Type::Reference(rf) => {
-                            let mut new_field = default_borrowed_field.clone();
-                            if let Expr::Reference(ref mut new_rf) = new_field {
-                                // Copying borrow mutability
-                                new_rf.mutability = rf.mutability;
-                                // Copying field ident
-                                if let Expr::Unary(ref mut new_subfield) = *new_rf.expr {
-                                    if let Expr::Field(ref mut new_unary_subfield) =
-                                        *new_subfield.expr
-                                    {
-                                        new_unary_subfield.member = Member::Named(id.ident.clone());
+        for item in (*signature).inputs.iter() {
+            match item {
+                FnArg::Typed(i) => {
+                    if let Pat::Ident(id) = &*i.pat {
+                        match *i.ty.clone() {
+                            Type::Reference(rf) => {
+                                let mut new_field = default_borrowed_field.clone();
+                                if let Expr::Reference(ref mut new_rf) = new_field {
+                                    // Copying borrow mutability
+                                    new_rf.mutability = rf.mutability;
+                                    // Copying field ident
+                                    if let Expr::Unary(ref mut new_subfield) = *new_rf.expr {
+                                        if let Expr::Field(ref mut new_unary_subfield) =
+                                            *new_subfield.expr
+                                        {
+                                            new_unary_subfield.member =
+                                                Member::Named(id.ident.clone());
+                                        } else {
+                                            panic!("Wrong borrowed field template");
+                                        }
                                     } else {
                                         panic!("Wrong borrowed field template");
                                     }
                                 } else {
                                     panic!("Wrong borrowed field template");
                                 }
-                            } else {
-                                panic!("Wrong borrowed field template");
-                            }
 
-                            // Pushing arguments to the function call
-                            args.push(new_field);
-                        }
-                        Type::Path(_) => {
-                            let mut new_field = default_field.clone();
-                            if let Expr::Field(ref mut f) = new_field {
-                                f.member = Member::Named(id.ident.clone());
-                            } else {
-                                panic!("Wrong unborrowed field template");
+                                // Pushing arguments to the function call
+                                args.push(new_field);
                             }
-                            // Pushing arguments to the function call
-                            args.push(new_field);
-                        }
-                        _ => {
-                            unimplemented!("Type of the function must be either standalone, or borrowed standalone");
-                        }
-                    };
-                } else {
-                    unimplemented!("Only simple arguments are currently supported.");
+                            Type::Path(_) => {
+                                let mut new_field = default_field.clone();
+                                if let Expr::Field(ref mut f) = new_field {
+                                    f.member = Member::Named(id.ident.clone());
+                                } else {
+                                    panic!("Wrong unborrowed field template");
+                                }
+                                // Pushing arguments to the function call
+                                args.push(new_field);
+                            }
+                            _ => {
+                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                            }
+                        };
+                    } else {
+                        unimplemented!("Only simple arguments are currently supported.");
+                    }
                 }
-            } else {
-                unimplemented!("Only standalone functions are currently supported.");
+                FnArg::Receiver(res) => {
+                    unimplemented!("Only standalone functions are currently supported.");
+                }
             }
         }
     }
 
     // Fuzing function input type
-    if let Typed(i) = fuzz_function.sig.inputs.iter_mut().next().unwrap() {
+    if let FnArg::Typed(i) = fuzz_function.sig.inputs.iter_mut().next().unwrap() {
         if let Type::Path(typ) = &mut *i.ty {
             typ.path.segments.iter_mut().next().unwrap().ident = Ident::new(
-                &("__fuzz_struct_".to_owned() + &(*function).sig.ident.to_string()),
+                &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
                 Span::call_site(),
             );
         }
@@ -178,27 +192,27 @@ pub fn fuzz_function(function: &ItemFn) -> ItemFn {
 
     // Fuzzing function ident
     fuzz_function.sig.ident = Ident::new(
-        &("__fuzz_".to_owned() + &(*function).sig.ident.to_string()),
+        &("__fuzz_".to_owned() + &(*signature).ident.to_string()),
         Span::call_site(),
     );
 
     // FnCall inside fuzzing function
     if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
         if let Expr::Path(path) = &mut *fn_call.func {
-            path.path.segments.iter_mut().next().unwrap().ident = (*function).sig.ident.clone();
+            path.path.segments.iter_mut().next().unwrap().ident = (*signature).ident.clone();
         }
     }
 
     fuzz_function
 }
 
-pub fn fuzz_harness(function: &ItemFn, crate_ident: &Ident, attr: TokenStream) -> TokenStream {
+pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: TokenStream) -> TokenStream {
     let arg_type = Ident::new(
-        &("__fuzz_struct_".to_owned() + &(*function).sig.ident.to_string()),
+        &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
         Span::call_site(),
     );
     let function_ident = Ident::new(
-        &("__fuzz_".to_owned() + &(*function).sig.ident.to_string()),
+        &("__fuzz_".to_owned() + &(*signature).ident.to_string()),
         Span::call_site(),
     );
 
@@ -252,7 +266,7 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(fuzz_struct(&function), fuzz_struct_needed);
+        assert_eq!(fuzz_struct(&function.sig, None), fuzz_struct_needed);
     }
 
     #[test]
@@ -275,7 +289,7 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(fuzz_function(&function), fuzz_function_needed);
+        assert_eq!(fuzz_function(&function.sig, None), fuzz_function_needed);
     }
 
     #[test]
@@ -302,7 +316,7 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(fuzz_struct(&function), fuzz_struct_needed);
+        assert_eq!(fuzz_struct(&function.sig, None), fuzz_struct_needed);
     }
 
     #[test]
@@ -326,7 +340,7 @@ mod tests {
             }
         ).unwrap();
 
-        assert_eq!(fuzz_function(&function), fuzz_function_needed);
+        assert_eq!(fuzz_function(&function.sig, None), fuzz_function_needed);
     }
 
     #[test]
@@ -357,7 +371,7 @@ mod tests {
         let attrs = quote!(foo::bar);
         let crate_ident = Ident::new("test_lib", Span::call_site());
         let fuzz_harness_generated: syn::File =
-            syn::parse2(fuzz_harness(&function, &crate_ident, attrs)).unwrap();
+            syn::parse2(fuzz_harness(&function.sig, &crate_ident, attrs)).unwrap();
 
         assert_eq!(fuzz_harness_generated, fuzz_harness_needed);
     }
