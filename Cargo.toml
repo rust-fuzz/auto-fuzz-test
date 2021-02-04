@@ -12,6 +12,10 @@ proc-macro2 = "1.0.24"
 fs3 = "0.5.0"
 cargo_toml = "0.8.1"
 
+[dev-dependencies]
+assert_tokens_eq = "0.1.0"
+pretty_assertions = "0.6.1"
+
 [lib]
 proc-macro = true
 

@@ -384,6 +384,8 @@ pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: TokenStrea
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
+    use assert_tokens_eq::assert_tokens_eq;
     use syn::ItemImpl;
 
     #[test]
@@ -500,7 +502,7 @@ mod tests {
         })
         .unwrap();
 
-        let fuzz_harness_needed: syn::File = syn::parse2(quote! {
+        let fuzz_harness_needed = quote! {
             #![no_main]
             use libfuzzer_sys::fuzz_target;
             extern crate test_lib;
@@ -509,15 +511,12 @@ mod tests {
                     test_lib::foo::bar::__fuzz_maybe_checked_mul(input);
                 }
             );
-        })
-        .unwrap();
+        };
 
         let attrs = quote!(foo::bar);
         let crate_ident = Ident::new("test_lib", Span::call_site());
-        let fuzz_harness_generated: syn::File =
-            syn::parse2(fuzz_harness(&function.sig, &crate_ident, attrs)).unwrap();
-
-        assert_eq!(fuzz_harness_generated, fuzz_harness_needed);
+        
+        assert_tokens_eq!(fuzz_harness(&function.sig, &crate_ident, attrs), fuzz_harness_needed);
     }
 
     #[test]
@@ -545,8 +544,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            dbg!(fuzz_struct(&function.sig, Some(&implementation.self_ty))),
-            dbg!(fuzz_struct_needed)
+            fuzz_struct(&function.sig, Some(&implementation.self_ty)),
+            fuzz_struct_needed
         );
     }
 
@@ -575,8 +574,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            dbg!(fuzz_struct(&function.sig, Some(&implementation.self_ty))),
-            dbg!(fuzz_struct_needed)
+            fuzz_struct(&function.sig, Some(&implementation.self_ty)),
+            fuzz_struct_needed
         );
     }
 }
