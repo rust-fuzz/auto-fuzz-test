@@ -17,6 +17,10 @@ pub struct TestStruct {
 }
 #[create_cargofuzz_impl_harness]
 impl TestStruct {
+    pub fn new(a:u64, b:u64) -> TestStruct {
+        TestStruct {a,b}
+    }
+
     pub fn get_a(&self) -> u64 {
         self.a
     }

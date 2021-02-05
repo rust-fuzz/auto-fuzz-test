@@ -171,81 +171,176 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
     let mut fuzz_function: syn::ItemFn;
 
     match impl_type {
-        Some(_) => {
-            // method harness template
-            fuzz_function = syn::parse2(quote! {
-                pub fn fuzz(mut input:MyStruct) {
-                    (input.slf).foo(input.a, &mut *input.b);
-                }
-            })
-            .unwrap();
+        Some(typ) => {
+            match (*signature).inputs.first().unwrap() {
+                FnArg::Receiver(_) => {
+                    // method harness template
+                    fuzz_function = syn::parse2(quote! {
+                        pub fn fuzz(mut input:MyStruct) {
+                            (input.slf).foo(input.a, &mut *input.b);
+                        }
+                    })
+                    .unwrap();
 
-            if let Stmt::Semi(Expr::MethodCall(method_call), _) = &mut fuzz_function.block.stmts[0]
-            {
-                // MethodCall inside fuzzing function
-                method_call.method = (*signature).ident.clone();
+                    if let Stmt::Semi(Expr::MethodCall(method_call), _) =
+                        &mut fuzz_function.block.stmts[0]
+                    {
+                        // MethodCall inside fuzzing function
+                        method_call.method = (*signature).ident.clone();
 
-                // Arguments for internal method call
-                let args = &mut method_call.args;
-                let default_borrowed_field = args.pop().unwrap().into_value();
-                let default_field = args.pop().unwrap().into_value();
+                        // Arguments for internal method call
+                        let args = &mut method_call.args;
+                        let default_borrowed_field = args.pop().unwrap().into_value();
+                        let default_field = args.pop().unwrap().into_value();
 
-                let mut args_iterator = (*signature).inputs.iter();
-                if let FnArg::Typed(_) = args_iterator.next().unwrap() {
-                    unimplemented!("Assosiated functions")
-                }
-                for item in args_iterator {
-                    match item {
-                        FnArg::Typed(i) => {
-                            if let Pat::Ident(id) = &*i.pat {
-                                match *i.ty.clone() {
-                                    Type::Reference(rf) => {
-                                        let mut new_field = default_borrowed_field.clone();
-                                        if let Expr::Reference(ref mut new_rf) = new_field {
-                                            // Copying borrow mutability
-                                            new_rf.mutability = rf.mutability;
-                                            // Copying field ident
-                                            if let Expr::Unary(ref mut new_subfield) = *new_rf.expr
-                                            {
-                                                if let Expr::Field(ref mut new_unary_subfield) =
-                                                    *new_subfield.expr
-                                                {
-                                                    new_unary_subfield.member =
-                                                        Member::Named(id.ident.clone());
+                        for item in (*signature).inputs.iter().skip(1) {
+                            match item {
+                                FnArg::Typed(i) => {
+                                    if let Pat::Ident(id) = &*i.pat {
+                                        match *i.ty.clone() {
+                                            Type::Reference(rf) => {
+                                                let mut new_field = default_borrowed_field.clone();
+                                                if let Expr::Reference(ref mut new_rf) = new_field {
+                                                    // Copying borrow mutability
+                                                    new_rf.mutability = rf.mutability;
+                                                    // Copying field ident
+                                                    if let Expr::Unary(ref mut new_subfield) =
+                                                        *new_rf.expr
+                                                    {
+                                                        if let Expr::Field(
+                                                            ref mut new_unary_subfield,
+                                                        ) = *new_subfield.expr
+                                                        {
+                                                            new_unary_subfield.member =
+                                                                Member::Named(id.ident.clone());
+                                                        } else {
+                                                            panic!("Wrong borrowed field template");
+                                                        }
+                                                    } else {
+                                                        panic!("Wrong borrowed field template");
+                                                    }
                                                 } else {
                                                     panic!("Wrong borrowed field template");
                                                 }
-                                            } else {
-                                                panic!("Wrong borrowed field template");
-                                            }
-                                        } else {
-                                            panic!("Wrong borrowed field template");
-                                        }
 
-                                        // Pushing arguments to the function call
-                                        args.push(new_field);
+                                                // Pushing arguments to the function call
+                                                args.push(new_field);
+                                            }
+                                            Type::Path(_) => {
+                                                let mut new_field = default_field.clone();
+                                                if let Expr::Field(ref mut f) = new_field {
+                                                    f.member = Member::Named(id.ident.clone());
+                                                } else {
+                                                    panic!("Wrong unborrowed field template");
+                                                }
+                                                // Pushing arguments to the function call
+                                                args.push(new_field);
+                                            }
+                                            _ => {
+                                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                                            }
+                                        };
+                                    } else {
+                                        unimplemented!(
+                                            "Only simple arguments are currently supported."
+                                        );
                                     }
-                                    Type::Path(_) => {
-                                        let mut new_field = default_field.clone();
-                                        if let Expr::Field(ref mut f) = new_field {
-                                            f.member = Member::Named(id.ident.clone());
-                                        } else {
-                                            panic!("Wrong unborrowed field template");
-                                        }
-                                        // Pushing arguments to the function call
-                                        args.push(new_field);
-                                    }
-                                    _ => {
-                                        unimplemented!("Type of the function must be either standalone, or borrowed standalone");
-                                    }
-                                };
-                            } else {
-                                unimplemented!("Only simple arguments are currently supported.");
+                                }
+                                FnArg::Receiver(_) => {
+                                    panic!("Multiple receivers in one function.");
+                                }
                             }
                         }
-                        FnArg::Receiver(_) => {
-                            panic!("Multiple receivers in one function.");
+                    } else {
+                        panic!("Wrong method call template.")
+                    }
+                }
+                FnArg::Typed(_) => {
+                    // method harness template
+                    fuzz_function = syn::parse2(quote! {
+                        pub fn fuzz(mut input:MyStruct) {
+                            MyType::foo(input.a, &mut *input.b);
                         }
+                    })
+                    .unwrap();
+                    if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
+                        // FnCall inside fuzzing function
+                        if let Expr::Path(path) = &mut *fn_call.func {
+                            let mut segments_iter = path.path.segments.iter_mut();
+                            if let Type::Path(type_path) = typ {
+                                segments_iter.next().unwrap().ident =
+                                    type_path.path.segments.first().unwrap().ident.clone();
+                            } else {
+                                unimplemented!("Complex type")
+                            }
+                            segments_iter.next().unwrap().ident = (*signature).ident.clone();
+                        }
+
+                        // Arguments for internal function call
+                        let args = &mut fn_call.args;
+                        let default_borrowed_field = args.pop().unwrap().into_value();
+                        let default_field = args.pop().unwrap().into_value();
+
+                        for item in (*signature).inputs.iter() {
+                            match item {
+                                FnArg::Typed(i) => {
+                                    if let Pat::Ident(id) = &*i.pat {
+                                        match *i.ty.clone() {
+                                            Type::Reference(rf) => {
+                                                let mut new_field = default_borrowed_field.clone();
+                                                if let Expr::Reference(ref mut new_rf) = new_field {
+                                                    // Copying borrow mutability
+                                                    new_rf.mutability = rf.mutability;
+                                                    // Copying field ident
+                                                    if let Expr::Unary(ref mut new_subfield) =
+                                                        *new_rf.expr
+                                                    {
+                                                        if let Expr::Field(
+                                                            ref mut new_unary_subfield,
+                                                        ) = *new_subfield.expr
+                                                        {
+                                                            new_unary_subfield.member =
+                                                                Member::Named(id.ident.clone());
+                                                        } else {
+                                                            panic!("Wrong borrowed field template");
+                                                        }
+                                                    } else {
+                                                        panic!("Wrong borrowed field template");
+                                                    }
+                                                } else {
+                                                    panic!("Wrong borrowed field template");
+                                                }
+
+                                                // Pushing arguments to the function call
+                                                args.push(new_field);
+                                            }
+                                            Type::Path(_) => {
+                                                let mut new_field = default_field.clone();
+                                                if let Expr::Field(ref mut f) = new_field {
+                                                    f.member = Member::Named(id.ident.clone());
+                                                } else {
+                                                    panic!("Wrong unborrowed field template");
+                                                }
+                                                // Pushing arguments to the function call
+                                                args.push(new_field);
+                                            }
+                                            _ => {
+                                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                                            }
+                                        };
+                                    } else {
+                                        unimplemented!(
+                                            "Only simple arguments are currently supported."
+                                        );
+                                    }
+                                }
+                                FnArg::Receiver(_) => {
+                                    panic!("This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]")
+                                }
+                            }
+                        }
+                    } else {
+                        panic!("Wrong generator call template.")
                     }
                 }
             }
@@ -325,6 +420,8 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
                         }
                     }
                 }
+            } else {
+                panic!("Wrong function call template.")
             }
         }
     }
@@ -584,6 +681,31 @@ mod tests {
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_set_b(mut input: __fuzz_struct_set_b) {
                     (input.slf).set_b(input.b);
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            fuzz_function(&function.sig, Some(&implementation.self_ty)),
+            fuzz_function_needed
+        );
+    }
+
+    #[test]
+    fn test_method_generator() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn new(a:u64, b:u64) -> TestStruct {
+                TestStruct {a,b}
+            }
+        })
+        .unwrap();
+        let implementation: ItemImpl = syn::parse2(quote! {
+            impl TestStruct {
+            }
+        })
+        .unwrap();
+        let fuzz_function_needed: ItemFn = syn::parse2(quote! {
+            pub fn __fuzz_new(mut input: __fuzz_struct_new) {
+                TestStruct::new(input.a, input.b);
             }
         })
         .unwrap();
