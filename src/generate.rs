@@ -1,4 +1,5 @@
 use proc_macro2::TokenStream;
+use std::fmt;
 use syn::FnArg;
 use syn::__private::Span;
 use syn::{
@@ -6,13 +7,19 @@ use syn::{
     Signature, Stmt, Type,
 };
 
-pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> ItemStruct {
+pub fn fuzz_struct(
+    signature: &Signature,
+    impl_type: Option<&Type>,
+) -> Result<ItemStruct, GenerateStructError> {
     // struct for function arguments template
-    let mut fuzz_struct: ItemStruct = syn::parse_str(
-        "#[derive(Arbitrary)]
+    let mut fuzz_struct: ItemStruct = syn::parse2(quote! {
+        #[derive(Arbitrary)]
         #[derive(Debug)]
-            pub struct fuzz {a:u32, b:Box<u64>}",
-    )
+        pub struct fuzz {
+            a:u32,
+            b:Box<u64>
+        }
+    })
     .unwrap();
 
     // Struct ident generation
@@ -78,7 +85,7 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> ItemStruc
                                     // Pushing variable type for the struct field
                                     fields.named.push(variable);
                                 } else {
-                                    unimplemented!("Sliced arguments.");
+                                    return Err(GenerateStructError::ComplexArg);
                                 }
                             }
                             Type::Path(path) => {
@@ -91,11 +98,11 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> ItemStruc
                                 fields.named.push(variable);
                             }
                             _ => {
-                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                                return Err(GenerateStructError::ComplexArg);
                             }
                         };
                     } else {
-                        unimplemented!("Only simple arguments are currently supported.");
+                        return Err(GenerateStructError::ComplexVariable);
                     }
                 }
                 FnArg::Receiver(res) => {
@@ -136,7 +143,7 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> ItemStruc
                                 fields.named.push(variable);
                             }
                         } else {
-                            unimplemented!("Complex Self type");
+                            return Err(GenerateStructError::ComplexSelfType);
                         }
                     } else {
                         panic!("Self type must be supplied for method parsing")
@@ -148,25 +155,23 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> ItemStruc
         panic!("Struct template must contain named fields");
     }
 
-    fuzz_struct
+    Ok(fuzz_struct)
 }
 
-pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn {
+pub fn fuzz_function(
+    signature: &Signature,
+    impl_type: Option<&Type>,
+) -> Result<ItemFn, GenerateFnError> {
     // Checking that the function meets our requirements
-    assert_eq!(signature.asyncness, None, "Can not fuzz async functions.");
-    assert_eq!(
-        signature.unsafety, None,
-        "unsafe functions can not be fuzzed automatically."
-    );
-    assert!(
-        !signature.inputs.is_empty(),
-        "It is useless to fuzz function without arguments."
-    );
-    //assert!(
-    //<Generic type parameter>,
-    //"Generics are not currently supported."
-    //);
-    //TODO: tests
+    if signature.asyncness.is_some() {
+        return Err(GenerateFnError::Async);
+    }
+    if signature.unsafety.is_some() {
+        return Err(GenerateFnError::Unsafe);
+    }
+    if signature.inputs.is_empty() {
+        return Err(GenerateFnError::Empty);
+    }
 
     let mut fuzz_function: syn::ItemFn;
 
@@ -237,17 +242,16 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
                                                 args.push(new_field);
                                             }
                                             _ => {
-                                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                                                return Err(GenerateFnError::ComplexArg);
                                             }
                                         };
                                     } else {
-                                        unimplemented!(
-                                            "Only simple arguments are currently supported."
-                                        );
+                                        return Err(GenerateFnError::ComplexSelfType);
                                     }
                                 }
                                 FnArg::Receiver(_) => {
-                                    panic!("Multiple receivers in one function.");
+                                    return Err(GenerateFnError::MultipleRes);
+                                    //panic!("Multiple receivers in one function.");
                                 }
                             }
                         }
@@ -271,7 +275,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
                                 segments_iter.next().unwrap().ident =
                                     type_path.path.segments.first().unwrap().ident.clone();
                             } else {
-                                unimplemented!("Complex type")
+                                return Err(GenerateFnError::ComplexMethodCall);
                             }
                             segments_iter.next().unwrap().ident = (*signature).ident.clone();
                         }
@@ -325,13 +329,11 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
                                                 args.push(new_field);
                                             }
                                             _ => {
-                                                unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                                                return Err(GenerateFnError::ComplexArg);
                                             }
                                         };
                                     } else {
-                                        unimplemented!(
-                                            "Only simple arguments are currently supported."
-                                        );
+                                        return Err(GenerateFnError::ComplexSelfType);
                                     }
                                 }
                                 FnArg::Receiver(_) => {
@@ -359,6 +361,8 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
                 if let Expr::Path(path) = &mut *fn_call.func {
                     path.path.segments.iter_mut().next().unwrap().ident =
                         (*signature).ident.clone();
+                } else {
+                    panic!("Wrong function harness template.")
                 }
 
                 // Arguments for internal function call
@@ -408,11 +412,11 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
                                         args.push(new_field);
                                     }
                                     _ => {
-                                        unimplemented!("Type of the function must be either standalone, or borrowed standalone");
+                                        return Err(GenerateFnError::ComplexArg);
                                     }
                                 };
                             } else {
-                                unimplemented!("Only simple arguments are currently supported.");
+                                return Err(GenerateFnError::ComplexVariable);
                             }
                         }
                         FnArg::Receiver(_) => {
@@ -442,7 +446,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> ItemFn 
         Span::call_site(),
     );
 
-    fuzz_function
+    Ok(fuzz_function)
 }
 
 pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: TokenStream) -> TokenStream {
@@ -477,6 +481,58 @@ pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: TokenStrea
     code
 }
 
+#[derive(Debug, PartialEq)]
+pub enum GenerateStructError {
+    ComplexArg,
+    ComplexSelfType,
+    ComplexVariable,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum GenerateFnError {
+    Unsafe,
+    Async,
+    Empty,
+    ComplexArg,
+    ComplexSelfType,
+    MultipleRes,
+    ComplexMethodCall,
+    ComplexVariable,
+}
+
+impl fmt::Display for GenerateStructError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let err_msg = match self {
+            GenerateStructError::ComplexArg => "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)",
+            GenerateStructError::ComplexSelfType => "Only implementations for simple (like `MyType`) types are supported",
+            GenerateStructError::ComplexVariable => "Complex variable (like `&mut *a`) are not supported",
+        };
+
+        write!(f, "{}", err_msg)
+    }
+}
+
+impl fmt::Display for GenerateFnError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let err_msg = match self {
+            GenerateFnError::Async => "Can not fuzz async functions.",
+            GenerateFnError::Unsafe => "unsafe functions can not be fuzzed automatically.",
+            GenerateFnError::Empty => "It is useless to fuzz function without input parameters.",
+            GenerateFnError::ComplexArg => {
+                "Type of the function must be either standalone, or borrowed standalone"
+            }
+            GenerateFnError::ComplexSelfType => "Only simple Self types are currently supported.",
+            GenerateFnError::MultipleRes => "Muptiple Self values in function args.",
+            GenerateFnError::ComplexMethodCall => {
+                "Complex method calls are not currently supported."
+            }
+            GenerateFnError::ComplexVariable => "Only simple arguments are currently supported.",
+        };
+
+        write!(f, "{}", err_msg)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,7 +563,7 @@ mod tests {
             }
         })
         .unwrap();
-        assert_eq!(fuzz_struct(&function.sig, None), fuzz_struct_needed);
+        assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
 
     #[test]
@@ -533,7 +589,7 @@ mod tests {
             }
         })
         .unwrap();
-        assert_eq!(fuzz_struct(&function.sig, None), fuzz_struct_needed);
+        assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
 
     #[test]
@@ -562,7 +618,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fuzz_struct(&function.sig, Some(&implementation.self_ty)),
-            fuzz_struct_needed
+            Ok(fuzz_struct_needed)
         );
     }
 
@@ -591,7 +647,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fuzz_struct(&function.sig, Some(&implementation.self_ty)),
-            fuzz_struct_needed
+            Ok(fuzz_struct_needed)
         );
     }
 
@@ -614,7 +670,7 @@ mod tests {
             }
         })
         .unwrap();
-        assert_eq!(fuzz_function(&function.sig, None), fuzz_function_needed);
+        assert_eq!(fuzz_function(&function.sig, None), Ok(fuzz_function_needed));
     }
 
     #[test]
@@ -637,7 +693,7 @@ mod tests {
                 }
             }
         ).unwrap();
-        assert_eq!(fuzz_function(&function.sig, None), fuzz_function_needed);
+        assert_eq!(fuzz_function(&function.sig, None), Ok(fuzz_function_needed));
     }
 
     #[test]
@@ -661,7 +717,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
-            fuzz_function_needed
+            Ok(fuzz_function_needed)
         );
     }
 
@@ -686,7 +742,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
-            fuzz_function_needed
+            Ok(fuzz_function_needed)
         );
     }
 
@@ -711,7 +767,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
-            fuzz_function_needed
+            Ok(fuzz_function_needed)
         );
     }
 

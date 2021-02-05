@@ -32,8 +32,8 @@ pub fn create_cargofuzz_impl_harness(
 fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) -> TokenStream {
     let function: ItemFn = syn::parse(input).expect("Failed to parse input");
 
-    let fuzz_struct = generate::fuzz_struct(&function.sig, None);
-    let fuzz_function = generate::fuzz_function(&function.sig, None);
+    let fuzz_struct = generate::fuzz_struct(&function.sig, None).unwrap();
+    let fuzz_function = generate::fuzz_function(&function.sig, None).unwrap();
 
     let crate_info = crate_parse::CrateInfo::from_root(
         &env::current_dir().expect("Failed to obtain project root dir"),
@@ -95,8 +95,10 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
 
     for item in implementation.items.iter() {
         if let ImplItem::Method(method) = item {
-            let fuzz_struct = generate::fuzz_struct(&method.sig, Some(&implementation.self_ty));
-            let fuzz_function = generate::fuzz_function(&method.sig, Some(&implementation.self_ty));
+            let fuzz_struct =
+                generate::fuzz_struct(&method.sig, Some(&implementation.self_ty)).unwrap();
+            let fuzz_function =
+                generate::fuzz_function(&method.sig, Some(&implementation.self_ty)).unwrap();
             // Writing fuzzing harness to file
             let code = generate::fuzz_harness(&method.sig, &crate_ident, attr.clone());
 
