@@ -62,8 +62,8 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
 
     quote!(
         #function
-      #fuzz_struct
-    #fuzz_function
+        #fuzz_struct
+        #fuzz_function
     )
 }
 
@@ -95,26 +95,45 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
 
     for item in implementation.items.iter() {
         if let ImplItem::Method(method) = item {
-            let fuzz_struct =
-                generate::fuzz_struct(&method.sig, Some(&implementation.self_ty)).unwrap();
-            let fuzz_function =
-                generate::fuzz_function(&method.sig, Some(&implementation.self_ty)).unwrap();
-            // Writing fuzzing harness to file
-            let code = generate::fuzz_harness(&method.sig, &crate_ident, attr.clone());
+            let fuzz_struct_result =
+                generate::fuzz_struct(&method.sig, Some(&implementation.self_ty));
+            let fuzz_function_result =
+                generate::fuzz_function(&method.sig, Some(&implementation.self_ty));
 
-            fs::write(
-                fuzz_dir_path.join(String::new() + &method.sig.ident.to_string() + ".rs"),
-                code.to_string(),
-            )
-            .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
-            // TODO: Error handing
+            match (fuzz_struct_result, fuzz_function_result) {
+                (Ok(fuzz_struct), Ok(fuzz_function)) => {
+                    // Writing fuzzing harness to file
+                    let code = generate::fuzz_harness(&method.sig, &crate_ident, attr.clone());
 
-            crate_info
-                .write_cargo_toml(&method.sig.ident)
-                .expect("Failed to update Cargo.toml");
+                    fs::write(
+                        fuzz_dir_path.join(String::new() + &method.sig.ident.to_string() + ".rs"),
+                        code.to_string(),
+                    )
+                    .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
+                    // TODO: Error handing
 
-            fuzz_structs.push(fuzz_struct);
-            fuzz_functions.push(fuzz_function);
+                    crate_info
+                        .write_cargo_toml(&method.sig.ident)
+                        .expect("Failed to update Cargo.toml");
+                    fuzz_structs.push(fuzz_struct);
+                    fuzz_functions.push(fuzz_function);
+                }
+                (Ok(_), Err(error)) => {
+                    eprintln!("Skipping method {}, due to:\n{}", &method.sig.ident, error);
+                    continue;
+                }
+                (Err(error), Ok(_)) => {
+                    eprintln!("Skipping method {}, due to {}", &method.sig.ident, error);
+                    continue;
+                }
+                (Err(_), Err(function_error)) => {
+                    eprintln!(
+                        "Skipping method {}, due to:\n{}",
+                        &method.sig.ident, function_error
+                    );
+                    continue;
+                }
+            }
         } else {
             continue;
         }

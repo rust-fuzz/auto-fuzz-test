@@ -2,10 +2,8 @@ use proc_macro2::TokenStream;
 use std::fmt;
 use syn::FnArg;
 use syn::__private::Span;
-use syn::{
-    Expr, Fields, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
-    Signature, Stmt, Type,
-};
+use syn::{Expr, Fields, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
+          Signature, Stmt, Type};
 
 pub fn fuzz_struct(
     signature: &Signature,
@@ -19,8 +17,7 @@ pub fn fuzz_struct(
             a:u32,
             b:Box<u64>
         }
-    })
-    .unwrap();
+    }).unwrap();
 
     // Struct ident generation
     fuzz_struct.ident = Ident::new(
@@ -184,8 +181,7 @@ pub fn fuzz_function(
                         pub fn fuzz(mut input:MyStruct) {
                             (input.slf).foo(input.a, &mut *input.b);
                         }
-                    })
-                    .unwrap();
+                    }).unwrap();
 
                     if let Stmt::Semi(Expr::MethodCall(method_call), _) =
                         &mut fuzz_function.block.stmts[0]
@@ -265,8 +261,7 @@ pub fn fuzz_function(
                         pub fn fuzz(mut input:MyStruct) {
                             MyType::foo(input.a, &mut *input.b);
                         }
-                    })
-                    .unwrap();
+                    }).unwrap();
                     if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
                         // FnCall inside fuzzing function
                         if let Expr::Path(path) = &mut *fn_call.func {
@@ -337,7 +332,9 @@ pub fn fuzz_function(
                                     }
                                 }
                                 FnArg::Receiver(_) => {
-                                    panic!("This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]")
+                                    panic!(
+                                        "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
+                                    )
                                 }
                             }
                         }
@@ -353,8 +350,7 @@ pub fn fuzz_function(
                 pub fn fuzz(mut input:MyStruct) {
                     foo(input.a, &mut *input.b);
                 }
-            })
-            .unwrap();
+            }).unwrap();
 
             if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
                 // FnCall inside fuzzing function
@@ -381,7 +377,8 @@ pub fn fuzz_function(
                                             // Copying borrow mutability
                                             new_rf.mutability = rf.mutability;
                                             // Copying field ident
-                                            if let Expr::Unary(ref mut new_subfield) = *new_rf.expr
+                                            if let Expr::Unary(ref mut new_subfield) =
+                                                *new_rf.expr
                                             {
                                                 if let Expr::Field(ref mut new_unary_subfield) =
                                                     *new_subfield.expr
@@ -420,7 +417,9 @@ pub fn fuzz_function(
                             }
                         }
                         FnArg::Receiver(_) => {
-                            panic!("This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]")
+                            panic!(
+                                "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
+                            )
                         }
                     }
                 }
@@ -433,10 +432,11 @@ pub fn fuzz_function(
     // Fuzing function input type
     if let FnArg::Typed(i) = fuzz_function.sig.inputs.iter_mut().next().unwrap() {
         if let Type::Path(typ) = &mut *i.ty {
-            typ.path.segments.iter_mut().next().unwrap().ident = Ident::new(
-                &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
-                Span::call_site(),
-            );
+            typ.path.segments.iter_mut().next().unwrap().ident =
+                Ident::new(
+                    &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
+                    Span::call_site(),
+                );
         }
     }
 
@@ -503,9 +503,15 @@ pub enum GenerateFnError {
 impl fmt::Display for GenerateStructError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let err_msg = match self {
-            GenerateStructError::ComplexArg => "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)",
-            GenerateStructError::ComplexSelfType => "Only implementations for simple (like `MyType`) types are supported",
-            GenerateStructError::ComplexVariable => "Complex variable (like `&mut *a`) are not supported",
+            GenerateStructError::ComplexArg => {
+                "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)"
+            }
+            GenerateStructError::ComplexSelfType => {
+                "Only implementations for simple (like `MyType`) types are supported"
+            }
+            GenerateStructError::ComplexVariable => {
+                "Complex variable (like `&mut *a`) are not supported"
+            }
         };
 
         write!(f, "{}", err_msg)
@@ -541,7 +547,7 @@ mod tests {
     use syn::ItemImpl;
 
     #[test]
-    fn test_struct_no_borrows() {
+    fn struct_no_borrows() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool) -> u64 {
                 if crash_on_overflow {
@@ -550,8 +556,7 @@ mod tests {
                     a.overflowing_mul(b).0
                 }
             }
-        })
-        .unwrap();
+        }).unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -561,13 +566,12 @@ mod tests {
                 b: u64,
                 crash_on_overflow: bool
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
 
     #[test]
-    fn test_struct_borrowed() {
+    fn struct_borrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn maybe_checked_mul_borrowed(a: &mut u64, b: u64, crash_on_overflow: bool) {
                 if crash_on_overflow {
@@ -576,8 +580,7 @@ mod tests {
                     *a = a.overflowing_mul(b).0;
                 }
             }
-        })
-        .unwrap();
+        }).unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -587,25 +590,22 @@ mod tests {
                 b: u64,
                 crash_on_overflow: bool
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
 
     #[test]
-    fn test_struct_method_borrowed() {
+    fn struct_method_borrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn set_b(&mut self, b: u64) {
                 self.b = b;
             }
-        })
-        .unwrap();
+        }).unwrap();
 
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        })
-        .unwrap();
+        }).unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -614,8 +614,7 @@ mod tests {
                 slf: Box<TestStruct>,
                 b: u64
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(
             fuzz_struct(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_struct_needed)
@@ -623,18 +622,16 @@ mod tests {
     }
 
     #[test]
-    fn test_struct_method_unborrowed() {
+    fn struct_method_unborrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn set_b(self, b: u64) -> u64 {
                 self.b + b
             }
-        })
-        .unwrap();
+        }).unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        })
-        .unwrap();
+        }).unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -643,8 +640,7 @@ mod tests {
                 slf: TestStruct,
                 b: u64
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(
             fuzz_struct(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_struct_needed)
@@ -652,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn test_function_unborrowed() {
+    fn function_unborrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool) -> u64 {
                 if crash_on_overflow {
@@ -661,20 +657,18 @@ mod tests {
                     a.overflowing_mul(b).0
                 }
             }
-        })
-        .unwrap();
+        }).unwrap();
 
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_maybe_checked_mul(mut input:__fuzz_struct_maybe_checked_mul) {
                 maybe_checked_mul(input.a, input.b, input.crash_on_overflow);
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(fuzz_function(&function.sig, None), Ok(fuzz_function_needed));
     }
 
     #[test]
-    fn test_function_borrowed() {
+    fn function_borrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn maybe_checked_mul_borrowed(a: &mut u64, b: u64, crash_on_overflow: bool) {
                 if crash_on_overflow {
@@ -683,8 +677,7 @@ mod tests {
                     *a = a.overflowing_mul(b).0;
                 }
             }
-        })
-        .unwrap();
+        }).unwrap();
 
         let fuzz_function_needed: ItemFn = syn::parse2(
             quote! {
@@ -697,24 +690,21 @@ mod tests {
     }
 
     #[test]
-    fn test_method_unborrowed() {
+    fn method_unborrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn set_b(self, b: u64) -> u64 {
                 self.b + b
             }
-        })
-        .unwrap();
+        }).unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        })
-        .unwrap();
+        }).unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_set_b(mut input: __fuzz_struct_set_b) {
                     (input.slf).set_b(input.b);
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_function_needed)
@@ -722,24 +712,21 @@ mod tests {
     }
 
     #[test]
-    fn test_method_borrowed() {
+    fn method_borrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn set_b(&mut self, b: u64) {
                 self.b = b;
             }
-        })
-        .unwrap();
+        }).unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        })
-        .unwrap();
+        }).unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_set_b(mut input: __fuzz_struct_set_b) {
                     (input.slf).set_b(input.b);
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_function_needed)
@@ -747,24 +734,21 @@ mod tests {
     }
 
     #[test]
-    fn test_method_generator() {
+    fn method_generator() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn new(a:u64, b:u64) -> TestStruct {
                 TestStruct {a,b}
             }
-        })
-        .unwrap();
+        }).unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        })
-        .unwrap();
+        }).unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_new(mut input: __fuzz_struct_new) {
                 TestStruct::new(input.a, input.b);
             }
-        })
-        .unwrap();
+        }).unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_function_needed)
@@ -772,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn test_harness() {
+    fn harness() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool) -> u64 {
                 if crash_on_overflow {
@@ -781,22 +765,22 @@ mod tests {
                     a.overflowing_mul(b).0
                 }
             }
-        })
-        .unwrap();
+        }).unwrap();
 
-        let fuzz_harness_needed = quote! {
+        let fuzz_harness_needed =
+            quote! {
             #![no_main]
             use libfuzzer_sys::fuzz_target;
-            extern crate test_lib;
+            extern crate lib;
 
-            fuzz_target!( |input: test_lib::foo::bar::__fuzz_struct_maybe_checked_mul| {
-                    test_lib::foo::bar::__fuzz_maybe_checked_mul(input);
+            fuzz_target!( |input: lib::foo::bar::__fuzz_struct_maybe_checked_mul| {
+                    lib::foo::bar::__fuzz_maybe_checked_mul(input);
                 }
             );
         };
 
         let attrs = quote!(foo::bar);
-        let crate_ident = Ident::new("test_lib", Span::call_site());
+        let crate_ident = Ident::new("lib", Span::call_site());
         assert_tokens_eq!(
             fuzz_harness(&function.sig, &crate_ident, attrs),
             fuzz_harness_needed
