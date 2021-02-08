@@ -123,7 +123,7 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                     continue;
                 }
                 (Err(error), Ok(_)) => {
-                    eprintln!("Skipping method {}, due to {}", &method.sig.ident, error);
+                    eprintln!("Skipping method {}, due to\n{}", &method.sig.ident, error);
                     continue;
                 }
                 (Err(_), Err(function_error)) => {

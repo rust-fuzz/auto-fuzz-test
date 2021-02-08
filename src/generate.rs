@@ -2,13 +2,15 @@ use proc_macro2::TokenStream;
 use std::fmt;
 use syn::FnArg;
 use syn::__private::Span;
-use syn::{Expr, Fields, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
-          Signature, Stmt, Type};
+use syn::{
+    Expr, Fields, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
+    Signature, Stmt, Type,
+};
 
 pub fn fuzz_struct(
     signature: &Signature,
     impl_type: Option<&Type>,
-) -> Result<ItemStruct, GenerateStructError> {
+) -> Result<ItemStruct, GenerateError> {
     // struct for function arguments template
     let mut fuzz_struct: ItemStruct = syn::parse2(quote! {
         #[derive(Arbitrary)]
@@ -17,7 +19,8 @@ pub fn fuzz_struct(
             a:u32,
             b:Box<u64>
         }
-    }).unwrap();
+    })
+    .unwrap();
 
     // Struct ident generation
     fuzz_struct.ident = Ident::new(
@@ -82,7 +85,7 @@ pub fn fuzz_struct(
                                     // Pushing variable type for the struct field
                                     fields.named.push(variable);
                                 } else {
-                                    return Err(GenerateStructError::ComplexArg);
+                                    return Err(GenerateError::ComplexArg);
                                 }
                             }
                             Type::Path(path) => {
@@ -95,11 +98,11 @@ pub fn fuzz_struct(
                                 fields.named.push(variable);
                             }
                             _ => {
-                                return Err(GenerateStructError::ComplexArg);
+                                return Err(GenerateError::ComplexArg);
                             }
                         };
                     } else {
-                        return Err(GenerateStructError::ComplexVariable);
+                        return Err(GenerateError::ComplexVariable);
                     }
                 }
                 FnArg::Receiver(res) => {
@@ -140,7 +143,7 @@ pub fn fuzz_struct(
                                 fields.named.push(variable);
                             }
                         } else {
-                            return Err(GenerateStructError::ComplexSelfType);
+                            return Err(GenerateError::ComplexSelfType);
                         }
                     } else {
                         panic!("Self type must be supplied for method parsing")
@@ -158,16 +161,16 @@ pub fn fuzz_struct(
 pub fn fuzz_function(
     signature: &Signature,
     impl_type: Option<&Type>,
-) -> Result<ItemFn, GenerateFnError> {
+) -> Result<ItemFn, GenerateError> {
     // Checking that the function meets our requirements
     if signature.asyncness.is_some() {
-        return Err(GenerateFnError::Async);
+        return Err(GenerateError::Async);
     }
     if signature.unsafety.is_some() {
-        return Err(GenerateFnError::Unsafe);
+        return Err(GenerateError::Unsafe);
     }
     if signature.inputs.is_empty() {
-        return Err(GenerateFnError::Empty);
+        return Err(GenerateError::Empty);
     }
 
     let mut fuzz_function: syn::ItemFn;
@@ -181,7 +184,8 @@ pub fn fuzz_function(
                         pub fn fuzz(mut input:MyStruct) {
                             (input.slf).foo(input.a, &mut *input.b);
                         }
-                    }).unwrap();
+                    })
+                    .unwrap();
 
                     if let Stmt::Semi(Expr::MethodCall(method_call), _) =
                         &mut fuzz_function.block.stmts[0]
@@ -238,16 +242,15 @@ pub fn fuzz_function(
                                                 args.push(new_field);
                                             }
                                             _ => {
-                                                return Err(GenerateFnError::ComplexArg);
+                                                return Err(GenerateError::ComplexArg);
                                             }
                                         };
                                     } else {
-                                        return Err(GenerateFnError::ComplexSelfType);
+                                        return Err(GenerateError::ComplexSelfType);
                                     }
                                 }
                                 FnArg::Receiver(_) => {
-                                    return Err(GenerateFnError::MultipleRes);
-                                    //panic!("Multiple receivers in one function.");
+                                    return Err(GenerateError::MultipleRes);
                                 }
                             }
                         }
@@ -261,7 +264,8 @@ pub fn fuzz_function(
                         pub fn fuzz(mut input:MyStruct) {
                             MyType::foo(input.a, &mut *input.b);
                         }
-                    }).unwrap();
+                    })
+                    .unwrap();
                     if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
                         // FnCall inside fuzzing function
                         if let Expr::Path(path) = &mut *fn_call.func {
@@ -270,7 +274,7 @@ pub fn fuzz_function(
                                 segments_iter.next().unwrap().ident =
                                     type_path.path.segments.first().unwrap().ident.clone();
                             } else {
-                                return Err(GenerateFnError::ComplexMethodCall);
+                                return Err(GenerateError::ComplexMethodCall);
                             }
                             segments_iter.next().unwrap().ident = (*signature).ident.clone();
                         }
@@ -324,11 +328,11 @@ pub fn fuzz_function(
                                                 args.push(new_field);
                                             }
                                             _ => {
-                                                return Err(GenerateFnError::ComplexArg);
+                                                return Err(GenerateError::ComplexArg);
                                             }
                                         };
                                     } else {
-                                        return Err(GenerateFnError::ComplexSelfType);
+                                        return Err(GenerateError::ComplexSelfType);
                                     }
                                 }
                                 FnArg::Receiver(_) => {
@@ -350,7 +354,8 @@ pub fn fuzz_function(
                 pub fn fuzz(mut input:MyStruct) {
                     foo(input.a, &mut *input.b);
                 }
-            }).unwrap();
+            })
+            .unwrap();
 
             if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
                 // FnCall inside fuzzing function
@@ -369,6 +374,7 @@ pub fn fuzz_function(
                 for item in (*signature).inputs.iter() {
                     match item {
                         FnArg::Typed(i) => {
+                            dbg!(&i);
                             if let Pat::Ident(id) = &*i.pat {
                                 match *i.ty.clone() {
                                     Type::Reference(rf) => {
@@ -377,8 +383,7 @@ pub fn fuzz_function(
                                             // Copying borrow mutability
                                             new_rf.mutability = rf.mutability;
                                             // Copying field ident
-                                            if let Expr::Unary(ref mut new_subfield) =
-                                                *new_rf.expr
+                                            if let Expr::Unary(ref mut new_subfield) = *new_rf.expr
                                             {
                                                 if let Expr::Field(ref mut new_unary_subfield) =
                                                     *new_subfield.expr
@@ -409,22 +414,22 @@ pub fn fuzz_function(
                                         args.push(new_field);
                                     }
                                     _ => {
-                                        return Err(GenerateFnError::ComplexArg);
+                                        return Err(GenerateError::ComplexArg);
                                     }
                                 };
                             } else {
-                                return Err(GenerateFnError::ComplexVariable);
+                                return Err(GenerateError::ComplexVariable);
                             }
                         }
                         FnArg::Receiver(_) => {
                             panic!(
                                 "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
-                            )
+                            );
                         }
                     }
                 }
             } else {
-                panic!("Wrong function call template.")
+                panic!("Wrong function call template.");
             }
         }
     }
@@ -432,11 +437,10 @@ pub fn fuzz_function(
     // Fuzing function input type
     if let FnArg::Typed(i) = fuzz_function.sig.inputs.iter_mut().next().unwrap() {
         if let Type::Path(typ) = &mut *i.ty {
-            typ.path.segments.iter_mut().next().unwrap().ident =
-                Ident::new(
-                    &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
-                    Span::call_site(),
-                );
+            typ.path.segments.iter_mut().next().unwrap().ident = Ident::new(
+                &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
+                Span::call_site(),
+            );
         }
     }
 
@@ -482,14 +486,7 @@ pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: TokenStrea
 }
 
 #[derive(Debug, PartialEq)]
-pub enum GenerateStructError {
-    ComplexArg,
-    ComplexSelfType,
-    ComplexVariable,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum GenerateFnError {
+pub enum GenerateError {
     Unsafe,
     Async,
     Empty,
@@ -500,39 +497,17 @@ pub enum GenerateFnError {
     ComplexVariable,
 }
 
-impl fmt::Display for GenerateStructError {
+impl fmt::Display for GenerateError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let err_msg = match self {
-            GenerateStructError::ComplexArg => {
-                "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)"
-            }
-            GenerateStructError::ComplexSelfType => {
-                "Only implementations for simple (like `MyType`) types are supported"
-            }
-            GenerateStructError::ComplexVariable => {
-                "Complex variable (like `&mut *a`) are not supported"
-            }
-        };
-
-        write!(f, "{}", err_msg)
-    }
-}
-
-impl fmt::Display for GenerateFnError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let err_msg = match self {
-            GenerateFnError::Async => "Can not fuzz async functions.",
-            GenerateFnError::Unsafe => "unsafe functions can not be fuzzed automatically.",
-            GenerateFnError::Empty => "It is useless to fuzz function without input parameters.",
-            GenerateFnError::ComplexArg => {
-                "Type of the function must be either standalone, or borrowed standalone"
-            }
-            GenerateFnError::ComplexSelfType => "Only simple Self types are currently supported.",
-            GenerateFnError::MultipleRes => "Muptiple Self values in function args.",
-            GenerateFnError::ComplexMethodCall => {
-                "Complex method calls are not currently supported."
-            }
-            GenerateFnError::ComplexVariable => "Only simple arguments are currently supported.",
+            GenerateError::Async => "Can not fuzz async functions.",
+            GenerateError::Unsafe => "unsafe functions can not be fuzzed automatically.",
+            GenerateError::Empty => "It is useless to fuzz function without input parameters.",
+            GenerateError::ComplexArg => "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)",
+            GenerateError::ComplexSelfType => "Only implementations for simple (like `MyType`) types are supported",
+            GenerateError::MultipleRes => "Muptiple Self values in function args.",
+            GenerateError::ComplexMethodCall => "Complex method calls are not currently supported.",
+            GenerateError::ComplexVariable => "Complex variables (like `&mut *a`) are not supported",
         };
 
         write!(f, "{}", err_msg)
@@ -556,7 +531,8 @@ mod tests {
                     a.overflowing_mul(b).0
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -566,7 +542,8 @@ mod tests {
                 b: u64,
                 crash_on_overflow: bool
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
 
@@ -580,7 +557,8 @@ mod tests {
                     *a = a.overflowing_mul(b).0;
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -590,7 +568,8 @@ mod tests {
                 b: u64,
                 crash_on_overflow: bool
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
 
@@ -600,12 +579,14 @@ mod tests {
             pub fn set_b(&mut self, b: u64) {
                 self.b = b;
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -614,7 +595,8 @@ mod tests {
                 slf: Box<TestStruct>,
                 b: u64
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(
             fuzz_struct(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_struct_needed)
@@ -627,11 +609,13 @@ mod tests {
             pub fn set_b(self, b: u64) -> u64 {
                 self.b + b
             }
-        }).unwrap();
+        })
+        .unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
@@ -640,10 +624,47 @@ mod tests {
                 slf: TestStruct,
                 b: u64
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(
             fuzz_struct(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_struct_needed)
+        );
+    }
+
+    #[test]
+    fn struct_sliced_arg() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool, sl: &[u32]) -> u64 {
+                if crash_on_overflow {
+                    a.checked_mul(b).expect("Overflow has occurred")
+                } else {
+                    a.overflowing_mul(b).0
+                }
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            fuzz_struct(&function.sig, None),
+            Err(GenerateError::ComplexArg)
+        );
+    }
+
+    #[test]
+    fn struct_complex_variable() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul(a: u64, b: u64, (c,d):(u32,u64)) -> u64 {
+                if crash_on_overflow {
+                    a.checked_mul(b).expect("Overflow has occurred")
+                } else {
+                    a.overflowing_mul(b).0
+                }
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            fuzz_struct(&function.sig, None),
+            Err(GenerateError::ComplexVariable)
         );
     }
 
@@ -657,13 +678,15 @@ mod tests {
                     a.overflowing_mul(b).0
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_maybe_checked_mul(mut input:__fuzz_struct_maybe_checked_mul) {
                 maybe_checked_mul(input.a, input.b, input.crash_on_overflow);
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(fuzz_function(&function.sig, None), Ok(fuzz_function_needed));
     }
 
@@ -677,7 +700,8 @@ mod tests {
                     *a = a.overflowing_mul(b).0;
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         let fuzz_function_needed: ItemFn = syn::parse2(
             quote! {
@@ -690,21 +714,82 @@ mod tests {
     }
 
     #[test]
+    fn function_sliced_arg() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool, sl: &[u32]) -> u64 {
+                if crash_on_overflow {
+                    a.checked_mul(b).expect("Overflow has occurred")
+                } else {
+                    a.overflowing_mul(b).0
+                }
+            }
+        })
+        .unwrap();
+
+        let fuzz_function_needed: ItemFn = syn::parse2(quote! {
+            pub fn __fuzz_maybe_checked_mul(mut input:__fuzz_struct_maybe_checked_mul) {
+                maybe_checked_mul(input.a, input.b, input.crash_on_overflow, & *input.sl);
+            }
+        })
+        .unwrap();
+        assert_eq!(fuzz_function(&function.sig, None), Ok(fuzz_function_needed));
+    }
+
+    #[test]
+    fn function_complex_variable() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul(a: u64, b: u64, (c,d):(u32,u64)) -> u64 {
+                if crash_on_overflow {
+                    a.checked_mul(b).expect("Overflow has occurred")
+                } else {
+                    a.overflowing_mul(b).0
+                }
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            fuzz_function(&function.sig, None),
+            Err(GenerateError::ComplexVariable)
+        );
+    }
+
+    #[test]
+    fn function_empty() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn maybe_checked_mul_borrowed() {
+                if crash_on_overflow {
+                    *a = a.checked_mul(b).expect("Overflow has occurred");
+                } else {
+                    *a = a.overflowing_mul(b).0;
+                }
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            fuzz_function(&function.sig, None),
+            Err(GenerateError::Empty)
+        );
+    }
+
+    #[test]
     fn method_unborrowed() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn set_b(self, b: u64) -> u64 {
                 self.b + b
             }
-        }).unwrap();
+        })
+        .unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        }).unwrap();
+        })
+        .unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_set_b(mut input: __fuzz_struct_set_b) {
                     (input.slf).set_b(input.b);
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_function_needed)
@@ -717,16 +802,19 @@ mod tests {
             pub fn set_b(&mut self, b: u64) {
                 self.b = b;
             }
-        }).unwrap();
+        })
+        .unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        }).unwrap();
+        })
+        .unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_set_b(mut input: __fuzz_struct_set_b) {
                     (input.slf).set_b(input.b);
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_function_needed)
@@ -739,16 +827,19 @@ mod tests {
             pub fn new(a:u64, b:u64) -> TestStruct {
                 TestStruct {a,b}
             }
-        }).unwrap();
+        })
+        .unwrap();
         let implementation: ItemImpl = syn::parse2(quote! {
             impl TestStruct {
             }
-        }).unwrap();
+        })
+        .unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_new(mut input: __fuzz_struct_new) {
                 TestStruct::new(input.a, input.b);
             }
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(
             fuzz_function(&function.sig, Some(&implementation.self_ty)),
             Ok(fuzz_function_needed)
@@ -765,10 +856,10 @@ mod tests {
                     a.overflowing_mul(b).0
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
-        let fuzz_harness_needed =
-            quote! {
+        let fuzz_harness_needed = quote! {
             #![no_main]
             use libfuzzer_sys::fuzz_target;
             extern crate lib;
