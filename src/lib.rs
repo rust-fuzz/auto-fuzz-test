@@ -47,17 +47,23 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
     let crate_ident = Ident::new(&crate_name_underscored, Span::call_site());
 
     // Writing fuzzing harness to file
-    let code = generate::fuzz_harness(&function.sig, &crate_ident, attr);
+    let ident = if attr.is_empty() {
+        function.sig.ident.to_string()
+    } else {
+        attr.to_string().replace("::", "__") + "__" + &function.sig.ident.to_string()
+    };
+
+    let code = generate::fuzz_harness(&function.sig, &crate_ident, &attr);
 
     fs::write(
-        fuzz_dir_path.join(String::new() + &function.sig.ident.to_string() + ".rs"),
+        fuzz_dir_path.join(String::new() + &ident + ".rs"),
         code.to_string(),
     )
     .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
     // TODO: Error handing
 
     crate_info
-        .write_cargo_toml(&function.sig.ident)
+        .write_cargo_toml(&function.sig.ident, &attr)
         .expect("Failed to update Cargo.toml");
 
     quote!(
@@ -103,7 +109,7 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
             match (fuzz_struct_result, fuzz_function_result) {
                 (Ok(fuzz_struct), Ok(fuzz_function)) => {
                     // Writing fuzzing harness to file
-                    let code = generate::fuzz_harness(&method.sig, &crate_ident, attr.clone());
+                    let code = generate::fuzz_harness(&method.sig, &crate_ident, &attr);
 
                     fs::write(
                         fuzz_dir_path.join(String::new() + &method.sig.ident.to_string() + ".rs"),
@@ -113,7 +119,7 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                     // TODO: Error handing
 
                     crate_info
-                        .write_cargo_toml(&method.sig.ident)
+                        .write_cargo_toml(&method.sig.ident, &attr)
                         .expect("Failed to update Cargo.toml");
                     fuzz_structs.push(fuzz_struct);
                     fuzz_functions.push(fuzz_function);

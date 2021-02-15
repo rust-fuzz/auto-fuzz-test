@@ -374,7 +374,6 @@ pub fn fuzz_function(
                 for item in (*signature).inputs.iter() {
                     match item {
                         FnArg::Typed(i) => {
-                            dbg!(&i);
                             if let Pat::Ident(id) = &*i.pat {
                                 match *i.ty.clone() {
                                     Type::Reference(rf) => {
@@ -453,7 +452,7 @@ pub fn fuzz_function(
     Ok(fuzz_function)
 }
 
-pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: TokenStream) -> TokenStream {
+pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: &TokenStream) -> TokenStream {
     let arg_type = Ident::new(
         &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
         Span::call_site(),
@@ -873,7 +872,7 @@ mod tests {
         let attrs = quote!(foo::bar);
         let crate_ident = Ident::new("lib", Span::call_site());
         assert_tokens_eq!(
-            fuzz_harness(&function.sig, &crate_ident, attrs),
+            fuzz_harness(&function.sig, &crate_ident, &attrs),
             fuzz_harness_needed
         );
     }

@@ -1,5 +1,6 @@
 extern crate fs3;
 use fs3::FileExt;
+use proc_macro2::TokenStream;
 use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -48,18 +49,16 @@ impl CrateInfo {
         let fuzz_dir_path = self.crate_root.join("fuzz");
         let fuzz_targets_dir_path = self.crate_root.join("fuzz").join("fuzz_targets");
         match std::fs::create_dir(&fuzz_dir_path) {
-            Ok(_) => {
-                match std::fs::create_dir(&fuzz_targets_dir_path) {
-                    Ok(_) => Ok(fuzz_targets_dir_path),
-                    Err(e) => {
-                        if e.kind() == std::io::ErrorKind::AlreadyExists {
-                            Ok(fuzz_targets_dir_path)
-                        } else {
-                            Err(e)
-                        }
+            Ok(_) => match std::fs::create_dir(&fuzz_targets_dir_path) {
+                Ok(_) => Ok(fuzz_targets_dir_path),
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::AlreadyExists {
+                        Ok(fuzz_targets_dir_path)
+                    } else {
+                        Err(e)
                     }
                 }
-            }
+            },
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
                     match std::fs::create_dir(&fuzz_targets_dir_path) {
@@ -79,11 +78,20 @@ impl CrateInfo {
         }
     }
 
-    pub fn write_cargo_toml(&self, function: &Ident) -> Result<(), Error> {
+    pub fn write_cargo_toml(&self, function: &Ident, attr: &TokenStream) -> Result<(), Error> {
+        // This is used to distinguish functions with the same names but in different modules
+        let ident = if attr.is_empty() {
+            function.to_string()
+        } else {
+            attr.to_string().replace("::", "__") + "__" + &function.to_string()
+        };
+
         match OpenOptions::new().write(true).create_new(true).open(
-            self.fuzz_dir().unwrap().parent().unwrap().join(
-                "Cargo.toml",
-            ),
+            self.fuzz_dir()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("Cargo.toml"),
         ) {
             Ok(mut file) => {
                 file.lock_exclusive()?;
@@ -102,9 +110,9 @@ impl CrateInfo {
                     file,
                     "{}{}{}{}{}",
                     &TARGET_TEMPLATE_PREFIX,
-                    &function.to_string(),
+                    &ident,
                     &TARGET_TEMPLATE_INFIX,
-                    &function.to_string(),
+                    &ident,
                     &TARGET_TEMPLATE_POSTFIX
                 )?;
                 file.flush()?;
@@ -118,9 +126,13 @@ impl CrateInfo {
                         .read(true)
                         .write(true)
                         .append(true)
-                        .open(self.fuzz_dir().unwrap().parent().unwrap().join(
-                            "Cargo.toml",
-                        ))?;
+                        .open(
+                            self.fuzz_dir()
+                                .unwrap()
+                                .parent()
+                                .unwrap()
+                                .join("Cargo.toml"),
+                        )?;
                     file.lock_exclusive()?;
 
                     // Checking, that we are not going to duplicate [[bin]] targets
@@ -129,19 +141,18 @@ impl CrateInfo {
                     let parts = buffer.split("\n\n");
                     let fuzz_target_exists = parts
                         .skip(5)
-                        .map(|item| if let TomlTable(table) = &item.lines()
-                            .nth(1)
-                            .unwrap()
-                            .parse::<TomlValue>()
-                            .unwrap()
-                        {
-                            if let TomlString(s) = table.get("name").unwrap() {
-                                s == &function.to_string()
+                        .map(|item| {
+                            if let TomlTable(table) =
+                                &item.lines().nth(1).unwrap().parse::<TomlValue>().unwrap()
+                            {
+                                if let TomlString(s) = table.get("name").unwrap() {
+                                    s == &ident
+                                } else {
+                                    false
+                                }
                             } else {
                                 false
                             }
-                        } else {
-                            false
                         })
                         .fold(false, |acc, x| acc | x);
                     if !fuzz_target_exists {
@@ -149,9 +160,9 @@ impl CrateInfo {
                             file,
                             "{}{}{}{}{}",
                             &TARGET_TEMPLATE_PREFIX,
-                            &function.to_string(),
+                            &ident,
                             &TARGET_TEMPLATE_INFIX,
-                            &function.to_string(),
+                            &ident,
                             &TARGET_TEMPLATE_POSTFIX
                         )?;
                         file.flush()?;
