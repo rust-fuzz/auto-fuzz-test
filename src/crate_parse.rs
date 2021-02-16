@@ -11,6 +11,7 @@ use cargo_toml::Value::Table as TomlTable;
 use toml::value::Value as TomlValue;
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub struct CrateInfo {
     crate_root: PathBuf,
     crate_name: String,
@@ -235,3 +236,73 @@ const TARGET_TEMPLATE_POSTFIX: &str = r#".rs"
 test = false
 doc = false
 "#;
+
+#[cfg(test)]
+impl PartialEq for CrateInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.crate_name == other.crate_name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn no_cargo_toml() {
+        let dir = tempdir().expect("Could not create a tempdir fot test");
+        assert_eq!(CrateInfo::from_root(dir.path()), None);
+    }
+
+    #[test]
+    fn empty_cargo_toml() {
+        let dir = tempdir().expect("Could not create tempdir fot test");
+        let cargo_toml_path = dir.path().join("Cargo.toml");
+        File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
+
+        assert_eq!(CrateInfo::from_root(dir.path()), None);
+    }
+
+    #[test]
+    fn cargo_toml() {
+        let dir = tempdir().expect("Could not create tempdir fot test");
+        let cargo_toml_path = dir.path().join("Cargo.toml");
+        let mut cargo_toml =
+            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
+        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
+            .expect("Could not write valid data to Cargo.toml fot test");
+
+        let expected = CrateInfo {
+            crate_name: "test-lib".to_string(),
+            crate_root: PathBuf::new(),
+        };
+        assert_eq!(CrateInfo::from_root(dir.path()), Some(expected));
+    }
+
+    #[test]
+    fn parse_valid_cargo_toml() {
+        let dir = tempdir().expect("Could not create tempdir fot test");
+        let cargo_toml_path = dir.path().join("Cargo.toml");
+        let mut cargo_toml =
+            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
+        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
+            .expect("Could not write valid data to Cargo.toml fot test");
+
+        assert_eq!(parse_crate_name(&cargo_toml_path), Some("test-lib".to_string()));
+    }
+
+    const VALID_CARGO_TOML: &str = r#"[package]
+name = "test-lib"
+version = "0.1.0"
+authors = ["jhwgh1968 <jhwgh1968@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+auto-fuzz-test = { path = "../"  }
+arbitrary = { version = "0.4", features = ["derive"]  }
+"#;
+}
