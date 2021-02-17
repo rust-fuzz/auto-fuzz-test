@@ -264,23 +264,7 @@ mod tests {
         let cargo_toml_path = dir.path().join("Cargo.toml");
         File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
 
-        assert_eq!(CrateInfo::from_root(dir.path()), None);
-    }
-
-    #[test]
-    fn cargo_toml() {
-        let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
-
-        let expected = CrateInfo {
-            crate_name: "test-lib".to_string(),
-            crate_root: PathBuf::new(),
-        };
-        assert_eq!(CrateInfo::from_root(dir.path()), Some(expected));
+        assert_eq!(parse_crate_name(&cargo_toml_path), None);
     }
 
     #[test]
@@ -292,7 +276,26 @@ mod tests {
         writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
             .expect("Could not write valid data to Cargo.toml fot test");
 
-        assert_eq!(parse_crate_name(&cargo_toml_path), Some("test-lib".to_string()));
+        assert_eq!(
+            parse_crate_name(&cargo_toml_path),
+            Some("test-lib".to_string())
+        );
+    }
+
+    #[test]
+    fn create_dirs() {
+        let dir = tempdir().expect("Could not create tempdir fot test");
+        let cargo_toml_path = dir.path().join("Cargo.toml");
+        let mut cargo_toml =
+            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
+        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
+            .expect("Could not write valid data to Cargo.toml fot test");
+        let crate_info = CrateInfo::from_root(dir.path()).unwrap();
+
+        assert_eq!(
+            crate_info.fuzz_dir().unwrap(),
+            crate_info.crate_root.join("fuzz").join("fuzz_targets")
+        );
     }
 
     const VALID_CARGO_TOML: &str = r#"[package]
