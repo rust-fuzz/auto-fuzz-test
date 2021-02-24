@@ -213,7 +213,7 @@ edition = "2018"
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.3"
+libfuzzer-sys = "0.4"
 
 [dependencies."#;
 
@@ -493,7 +493,7 @@ edition = "2018"
 
 [dependencies]
 auto-fuzz-test = { path = "../"  }
-arbitrary = { version = "0.4", features = ["derive"]  }
+arbitrary = { version = "1", features = ["derive"]  }
 "#;
 
 const VALID_GENERATED_CARGO_TOML_NOATTR: &str = r#"[package]
@@ -507,7 +507,7 @@ edition = "2018"
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.3"
+libfuzzer-sys = "0.4"
 
 [dependencies.test-lib]
 path = ".."
@@ -534,7 +534,7 @@ edition = "2018"
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.3"
+libfuzzer-sys = "0.4"
 
 [dependencies.test-lib]
 path = ".."
