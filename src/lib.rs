@@ -1,8 +1,5 @@
-extern crate proc_macro;
-extern crate syn;
-#[macro_use]
-extern crate quote;
 use proc_macro2::TokenStream;
+use quote::quote;
 use std::env;
 use std::fs;
 use syn::__private::Span;

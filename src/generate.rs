@@ -1,9 +1,9 @@
 use proc_macro2::TokenStream;
+use quote::quote;
 use std::fmt;
-use syn::FnArg;
 use syn::__private::Span;
 use syn::{
-    Expr, Fields, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
+    Expr, Fields, FnArg, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
     Signature, Stmt, Type,
 };
 

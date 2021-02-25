@@ -10,15 +10,15 @@ pub fn bool_to_num(string: String) -> usize {
 
 pub mod module;
 
-#[derive(Arbitrary,Debug)]
+#[derive(Arbitrary, Debug)]
 pub struct TestStruct {
     a: u64,
     b: u64,
 }
 #[create_cargofuzz_impl_harness]
 impl TestStruct {
-    pub fn new(a:u64, b:u64) -> TestStruct {
-        TestStruct {a,b}
+    pub fn new(a: u64, b: u64) -> TestStruct {
+        TestStruct { a, b }
     }
 
     pub fn get_a(&self) -> u64 {

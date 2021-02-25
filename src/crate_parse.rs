@@ -1,4 +1,3 @@
-extern crate fs3;
 use fs3::FileExt;
 use proc_macro2::TokenStream;
 use std::fs::{File, OpenOptions};
@@ -248,9 +247,10 @@ impl PartialEq for CrateInfo {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use quote::{format_ident, quote};
     use std::fs::File;
-    use std::thread;
     use std::io::Write;
+    use std::thread;
     use tempfile::tempdir;
 
     #[test]
@@ -358,12 +358,12 @@ mod tests {
         // Here comments with numbers are used to enumerate different function idents later they
         // will be used in different threads in different order
         let mut idents_needed = vec![
-            "foo__bar__dog__cat".to_string(), // 1
-            "foo__bar__foo".to_string(), // 2
-            "foo__bar__bar".to_string(), // 3
-            "foo__bar".to_string(), // 4
-            "foo__bar__dog__dog".to_string(), // 5
-            "foo__foo".to_string(), // 6
+            "foo__bar__dog__cat".to_string(),  // 1
+            "foo__bar__foo".to_string(),       // 2
+            "foo__bar__bar".to_string(),       // 3
+            "foo__bar".to_string(),            // 4
+            "foo__bar__dog__dog".to_string(),  // 5
+            "foo__foo".to_string(),            // 6
             "foo__bar__dog__func".to_string(), // 7
         ];
 
@@ -375,7 +375,7 @@ mod tests {
             let ident = format_ident!("cat");
             let attr = quote!(foo::bar::dog);
             crate_info_thread_1.write_cargo_toml(&ident, &attr).unwrap();
-            
+
             // 2
             let ident = format_ident!("foo");
             let attr = quote!(foo::bar);
@@ -408,7 +408,7 @@ mod tests {
             let ident = format_ident!("bar");
             let attr = quote!(foo::bar);
             crate_info_thread_2.write_cargo_toml(&ident, &attr).unwrap();
-            
+
             // 2
             let ident = format_ident!("foo");
             let attr = quote!(foo::bar);
@@ -473,12 +473,12 @@ mod tests {
                     None
                 }
             })
-        .fold(Vec::<String>::new(), |mut acc, x| {
-            if let Some(s) = x {
-                acc.push(s);
-            }
-            acc
-        });
+            .fold(Vec::<String>::new(), |mut acc, x| {
+                if let Some(s) = x {
+                    acc.push(s);
+                }
+                acc
+            });
 
         idents.sort();
 
@@ -496,7 +496,7 @@ auto-fuzz-test = { path = "../"  }
 arbitrary = { version = "1", features = ["derive"]  }
 "#;
 
-const VALID_GENERATED_CARGO_TOML_NOATTR: &str = r#"[package]
+    const VALID_GENERATED_CARGO_TOML_NOATTR: &str = r#"[package]
 name = "test-lib-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
@@ -523,7 +523,7 @@ test = false
 doc = false
 "#;
 
-const VALID_GENERATED_CARGO_TOML_ATTR: &str = r#"[package]
+    const VALID_GENERATED_CARGO_TOML_ATTR: &str = r#"[package]
 name = "test-lib-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
