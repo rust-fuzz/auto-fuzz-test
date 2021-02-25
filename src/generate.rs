@@ -1,7 +1,6 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use std::fmt;
-use syn::__private::Span;
 use syn::{
     Expr, Fields, FnArg, GenericArgument, Ident, ItemFn, ItemStruct, Member, Pat, PathArguments,
     Signature, Stmt, Type,
@@ -23,10 +22,22 @@ pub fn fuzz_struct(
     .unwrap();
 
     // Struct ident generation
-    fuzz_struct.ident = Ident::new(
-        &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
-        Span::call_site(),
-    );
+    fuzz_struct.ident = match impl_type {
+        Some(typ) => {
+            if let Type::Path(path) = typ {
+                format_ident!(
+                    "__fuzz_struct_{}_{}",
+                    &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                    &(*signature).ident.to_string()
+                )
+            } else {
+                return Err(GenerateError::ComplexSelfType);
+            }
+        }
+        None => {
+            format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string())
+        }
+    };
 
     // Struct fields generation
     if let Fields::Named(ref mut fields) = fuzz_struct.fields {
@@ -111,7 +122,7 @@ pub fn fuzz_struct(
                             if res.reference.is_some() {
                                 // `variable` is a new struct field
                                 let mut variable = default_boxed_variable.clone();
-                                variable.ident = Some(Ident::new("slf", Span::call_site()));
+                                variable.ident = Some(format_ident!("slf"));
 
                                 // Copying variable type
                                 if let Type::Path(ref mut new_path) = variable.ty {
@@ -136,7 +147,7 @@ pub fn fuzz_struct(
                             } else {
                                 // `variable` is a new struct field
                                 let mut variable = default_variable.clone();
-                                variable.ident = Some(Ident::new("slf", Span::call_site()));
+                                variable.ident = Some(format_ident!("slf"));
                                 // Copying variable type
                                 variable.ty = (*impl_type).clone();
                                 // Pushing variable type for the struct field
@@ -436,31 +447,86 @@ pub fn fuzz_function(
     // Fuzing function input type
     if let FnArg::Typed(i) = fuzz_function.sig.inputs.iter_mut().next().unwrap() {
         if let Type::Path(typ) = &mut *i.ty {
-            typ.path.segments.iter_mut().next().unwrap().ident = Ident::new(
-                &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
-                Span::call_site(),
-            );
+            typ.path.segments.iter_mut().next().unwrap().ident = match impl_type {
+                Some(typ) => {
+                    if let Type::Path(path) = typ {
+                        format_ident!(
+                            "__fuzz_struct_{}_{}",
+                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                            &(*signature).ident.to_string()
+                        )
+                    } else {
+                        return Err(GenerateError::ComplexSelfType);
+                    }
+                }
+                None => {
+                    format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string())
+                }
+            };
         }
     }
 
     // Fuzzing function ident
-    fuzz_function.sig.ident = Ident::new(
-        &("__fuzz_".to_owned() + &(*signature).ident.to_string()),
-        Span::call_site(),
-    );
+    fuzz_function.sig.ident = match impl_type {
+        Some(typ) => {
+            if let Type::Path(path) = typ {
+                format_ident!(
+                    "__fuzz_{}_{}",
+                    &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                    &(*signature).ident.to_string()
+                )
+            } else {
+                return Err(GenerateError::ComplexSelfType);
+            }
+        }
+        None => {
+            format_ident!("__fuzz_{}", &(*signature).ident.to_string())
+        }
+    };
 
     Ok(fuzz_function)
 }
 
-pub fn fuzz_harness(signature: &Signature, crate_ident: &Ident, attr: &TokenStream) -> TokenStream {
-    let arg_type = Ident::new(
-        &("__fuzz_struct_".to_owned() + &(*signature).ident.to_string()),
-        Span::call_site(),
-    );
-    let function_ident = Ident::new(
-        &("__fuzz_".to_owned() + &(*signature).ident.to_string()),
-        Span::call_site(),
-    );
+pub fn fuzz_harness(
+    signature: &Signature,
+    impl_type: Option<&Type>,
+    crate_ident: &Ident,
+    attr: &TokenStream,
+) -> TokenStream {
+    // Idents generation
+    let arg_type = match impl_type {
+        Some(typ) => {
+            if let Type::Path(path) = typ {
+                format_ident!(
+                    "__fuzz_struct_{}_{}",
+                    &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                    &(*signature).ident.to_string()
+                )
+            } else {
+                panic!("Complex self type.")
+            }
+        }
+        None => {
+            format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string())
+        }
+    };
+
+    let function_ident = match impl_type {
+        Some(typ) => {
+            if let Type::Path(path) = typ {
+                format_ident!(
+                    "__fuzz_{}_{}",
+                    &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                    &(*signature).ident.to_string()
+                )
+            } else {
+                panic!("Complex self type.")
+            }
+        }
+        None => {
+            format_ident!("__fuzz_{}", &(*signature).ident.to_string())
+        }
+    };
 
     let path = {
         if !attr.is_empty() {
@@ -590,7 +656,7 @@ mod tests {
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
             #[derive(Debug)]
-            pub struct __fuzz_struct_set_b {
+            pub struct __fuzz_struct_TestStruct_set_b {
                 slf: Box<TestStruct>,
                 b: u64
             }
@@ -619,7 +685,7 @@ mod tests {
         let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
             #[derive(Arbitrary)]
             #[derive(Debug)]
-            pub struct __fuzz_struct_set_b {
+            pub struct __fuzz_struct_TestStruct_set_b {
                 slf: TestStruct,
                 b: u64
             }
@@ -784,7 +850,7 @@ mod tests {
         })
         .unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
-            pub fn __fuzz_set_b(mut input: __fuzz_struct_set_b) {
+            pub fn __fuzz_TestStruct_set_b(mut input: __fuzz_struct_TestStruct_set_b) {
                     (input.slf).set_b(input.b);
             }
         })
@@ -809,7 +875,7 @@ mod tests {
         })
         .unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
-            pub fn __fuzz_set_b(mut input: __fuzz_struct_set_b) {
+            pub fn __fuzz_TestStruct_set_b(mut input: __fuzz_struct_TestStruct_set_b) {
                     (input.slf).set_b(input.b);
             }
         })
@@ -834,7 +900,7 @@ mod tests {
         })
         .unwrap();
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
-            pub fn __fuzz_new(mut input: __fuzz_struct_new) {
+            pub fn __fuzz_TestStruct_new(mut input: __fuzz_struct_TestStruct_new) {
                 TestStruct::new(input.a, input.b);
             }
         })
@@ -870,9 +936,9 @@ mod tests {
         };
 
         let attrs = quote!(foo::bar);
-        let crate_ident = Ident::new("lib", Span::call_site());
+        let crate_ident = format_ident!("lib");
         assert_tokens_eq!(
-            fuzz_harness(&function.sig, &crate_ident, &attrs),
+            fuzz_harness(&function.sig, None, &crate_ident, &attrs),
             fuzz_harness_needed
         );
     }
