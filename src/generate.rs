@@ -41,6 +41,9 @@ pub fn fuzz_struct(
 
     // Struct fields generation
     if let Fields::Named(ref mut fields) = fuzz_struct.fields {
+        // Here comes an epic destructuring of syn types.
+        // `else` parts of match arms on known data (`fuzz_struct` in this case) are
+        // marked with unreachable! macro, as they are, ahem, unreachable.
         let default_boxed_variable = fields
             .named
             .pop()
@@ -85,13 +88,13 @@ pub fn fuzz_struct(
                                             {
                                                 *new_subpath = Type::Path(path);
                                             } else {
-                                                panic!("Wrong boxed variable template");
+                                                unreachable!("Wrong boxed variable template");
                                             }
                                         } else {
-                                            panic!("Wrong boxed variable template");
+                                            unreachable!("Wrong boxed variable template");
                                         }
                                     } else {
-                                        panic!("Wrong boxed variable template");
+                                        unreachable!("Wrong boxed variable template");
                                     }
                                     // Pushing variable type for the struct field
                                     fields.named.push(variable);
@@ -134,13 +137,13 @@ pub fn fuzz_struct(
                                         {
                                             *new_subpath = (*impl_type).clone();
                                         } else {
-                                            panic!("Wrong boxed variable template");
+                                            unreachable!("Wrong boxed variable template");
                                         }
                                     } else {
-                                        panic!("Wrong boxed variable template");
+                                        unreachable!("Wrong boxed variable template");
                                     }
                                 } else {
-                                    panic!("Wrong boxed variable template");
+                                    unreachable!("Wrong boxed variable template");
                                 }
                                 // Pushing variable type for the struct field
                                 fields.named.push(variable);
@@ -163,7 +166,7 @@ pub fn fuzz_struct(
             }
         }
     } else {
-        panic!("Struct template must contain named fields");
+        unreachable!("Struct template must contain named fields");
     }
 
     Ok(fuzz_struct)
@@ -230,13 +233,17 @@ pub fn fuzz_function(
                                                             new_unary_subfield.member =
                                                                 Member::Named(id.ident.clone());
                                                         } else {
-                                                            panic!("Wrong borrowed field template");
+                                                            unreachable!(
+                                                                "Wrong borrowed field template"
+                                                            );
                                                         }
                                                     } else {
-                                                        panic!("Wrong borrowed field template");
+                                                        unreachable!(
+                                                            "Wrong borrowed field template"
+                                                        );
                                                     }
                                                 } else {
-                                                    panic!("Wrong borrowed field template");
+                                                    unreachable!("Wrong borrowed field template");
                                                 }
 
                                                 // Pushing arguments to the function call
@@ -247,7 +254,7 @@ pub fn fuzz_function(
                                                 if let Expr::Field(ref mut f) = new_field {
                                                     f.member = Member::Named(id.ident.clone());
                                                 } else {
-                                                    panic!("Wrong unborrowed field template");
+                                                    unreachable!("Wrong unborrowed field template");
                                                 }
                                                 // Pushing arguments to the function call
                                                 args.push(new_field);
@@ -266,7 +273,7 @@ pub fn fuzz_function(
                             }
                         }
                     } else {
-                        panic!("Wrong method call template.")
+                        unreachable!("Wrong method call template.")
                     }
                 }
                 FnArg::Typed(_) => {
@@ -277,6 +284,7 @@ pub fn fuzz_function(
                         }
                     })
                     .unwrap();
+
                     if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
                         // FnCall inside fuzzing function
                         if let Expr::Path(path) = &mut *fn_call.func {
@@ -316,13 +324,17 @@ pub fn fuzz_function(
                                                             new_unary_subfield.member =
                                                                 Member::Named(id.ident.clone());
                                                         } else {
-                                                            panic!("Wrong borrowed field template");
+                                                            unreachable!(
+                                                                "Wrong borrowed field template"
+                                                            );
                                                         }
                                                     } else {
-                                                        panic!("Wrong borrowed field template");
+                                                        unreachable!(
+                                                            "Wrong borrowed field template"
+                                                        );
                                                     }
                                                 } else {
-                                                    panic!("Wrong borrowed field template");
+                                                    unreachable!("Wrong borrowed field template");
                                                 }
 
                                                 // Pushing arguments to the function call
@@ -333,7 +345,7 @@ pub fn fuzz_function(
                                                 if let Expr::Field(ref mut f) = new_field {
                                                     f.member = Member::Named(id.ident.clone());
                                                 } else {
-                                                    panic!("Wrong unborrowed field template");
+                                                    unreachable!("Wrong unborrowed field template");
                                                 }
                                                 // Pushing arguments to the function call
                                                 args.push(new_field);
@@ -354,7 +366,7 @@ pub fn fuzz_function(
                             }
                         }
                     } else {
-                        panic!("Wrong generator call template.")
+                        unreachable!("Wrong generator call template.")
                     }
                 }
             }
@@ -374,7 +386,7 @@ pub fn fuzz_function(
                     path.path.segments.iter_mut().next().unwrap().ident =
                         (*signature).ident.clone();
                 } else {
-                    panic!("Wrong function harness template.")
+                    unreachable!("Wrong function harness template.")
                 }
 
                 // Arguments for internal function call
@@ -401,13 +413,13 @@ pub fn fuzz_function(
                                                     new_unary_subfield.member =
                                                         Member::Named(id.ident.clone());
                                                 } else {
-                                                    panic!("Wrong borrowed field template");
+                                                    unreachable!("Wrong borrowed field template");
                                                 }
                                             } else {
-                                                panic!("Wrong borrowed field template");
+                                                unreachable!("Wrong borrowed field template");
                                             }
                                         } else {
-                                            panic!("Wrong borrowed field template");
+                                            unreachable!("Wrong borrowed field template");
                                         }
 
                                         // Pushing arguments to the function call
@@ -418,7 +430,7 @@ pub fn fuzz_function(
                                         if let Expr::Field(ref mut f) = new_field {
                                             f.member = Member::Named(id.ident.clone());
                                         } else {
-                                            panic!("Wrong unborrowed field template");
+                                            unreachable!("Wrong unborrowed field template");
                                         }
                                         // Pushing arguments to the function call
                                         args.push(new_field);
@@ -439,7 +451,7 @@ pub fn fuzz_function(
                     }
                 }
             } else {
-                panic!("Wrong function call template.");
+                unreachable!("Wrong function call template.");
             }
         }
     }
@@ -503,7 +515,7 @@ pub fn fuzz_harness(
                     &(*signature).ident.to_string()
                 )
             } else {
-                panic!("Complex self type.")
+                unimplemented!("Complex self type.")
             }
         }
         None => {
@@ -520,7 +532,7 @@ pub fn fuzz_harness(
                     &(*signature).ident.to_string()
                 )
             } else {
-                panic!("Complex self type.")
+                unimplemented!("Complex self type.")
             }
         }
         None => {

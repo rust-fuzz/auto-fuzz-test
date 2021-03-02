@@ -59,7 +59,7 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
     // TODO: Error handing
 
     crate_info
-        .write_cargo_toml(&function.sig.ident, None, &attr)
+        .add_target_to_cargo_toml(&function.sig.ident, None, &attr)
         .expect("Failed to update Cargo.toml");
 
     quote!(
@@ -120,7 +120,7 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                     // TODO: Error handing
 
                     crate_info
-                        .write_cargo_toml(&method.sig.ident,Some(&implementation.self_ty), &attr)
+                        .add_target_to_cargo_toml(&method.sig.ident,Some(&implementation.self_ty), &attr)
                         .expect("Failed to update Cargo.toml");
                     fuzz_structs.push(fuzz_struct);
                     fuzz_functions.push(fuzz_function);
