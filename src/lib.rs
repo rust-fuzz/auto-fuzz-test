@@ -95,7 +95,7 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
     let mut fuzz_structs = Vec::<ItemStruct>::new();
     let mut fuzz_functions = Vec::<ItemFn>::new();
 
-    for item in implementation.items.iter() {
+    for item in &implementation.items {
         if let ImplItem::Method(method) = item {
             let fuzz_struct_result =
                 generate::fuzz_struct(&method.sig, Some(&implementation.self_ty));
@@ -141,8 +141,6 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                     continue;
                 }
             }
-        } else {
-            continue;
         }
     }
 
