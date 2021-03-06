@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::env;
 use std::fs;
-use syn::{ImplItem, ItemFn, ItemImpl, ItemStruct, Type};
+use syn::{ImplItem, ItemFn, ItemImpl, ItemStruct};
 
 mod crate_parse;
 mod generate;
@@ -47,11 +47,8 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
 
     let code = generate::fuzz_harness(&function.sig, None, &crate_ident, &attr);
 
-    fs::write(
-        fuzz_dir_path.join(String::new() + &ident + ".rs"),
-        code.to_string(),
-    )
-    .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
+    fs::write(fuzz_dir_path.join(ident + ".rs"), code.to_string())
+        .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
     // TODO: Error handing
 
     crate_info
@@ -107,17 +104,13 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                         &crate_ident,
                         &attr,
                     );
-                    let filename = if let Type::Path(ref path) = *implementation.self_ty {
-                        format!(
-                            "{}_{}.rs",
-                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                            &method.sig.ident.to_string()
-                        )
-                    } else {
-                        panic!("Complex self type.")
-                    };
+                    let ident = crate_parse::construct_harness_ident(
+                        &method.sig.ident,
+                        Some(&implementation.self_ty),
+                        &attr,
+                    );
 
-                    fs::write(fuzz_dir_path.join(filename), code.to_string())
+                    fs::write(fuzz_dir_path.join(ident + ".rs"), code.to_string())
                         .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
                     // TODO: Error handing
 
