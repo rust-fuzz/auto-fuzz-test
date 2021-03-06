@@ -43,11 +43,7 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
     let crate_ident = format_ident!("{}", &crate_name_underscored);
 
     // Writing fuzzing harness to file
-    let ident = if attr.is_empty() {
-        function.sig.ident.to_string()
-    } else {
-        attr.to_string().replace("::", "__") + "__" + &function.sig.ident.to_string()
-    };
+    let ident = crate_parse::construct_harness_ident(&function.sig.ident, None, &attr);
 
     let code = generate::fuzz_harness(&function.sig, None, &crate_ident, &attr);
 

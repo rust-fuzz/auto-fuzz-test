@@ -68,7 +68,7 @@ impl CrateInfo {
         impl_type: Option<&Type>,
         module_path: &TokenStream,
     ) -> Result<(), Error> {
-        let ident = CrateInfo::construct_harness_ident(function, impl_type, module_path);
+        let ident = construct_harness_ident(function, impl_type, module_path);
 
         let cargo_toml_path = self.fuzz_dir()?.parent().unwrap().join("Cargo.toml");
         match OpenOptions::new()
@@ -157,48 +157,6 @@ impl CrateInfo {
         }
     }
 
-    fn construct_harness_ident(
-        function: &Ident,
-        impl_type: Option<&Type>,
-        module_path: &TokenStream,
-    ) -> String {
-        // Functions in different modules and/or in different impl's can have identical names. To
-        // avoid collisions, this function adds module path and impl type to target filenames.
-        match impl_type {
-            Some(typ) => {
-                if let Type::Path(path) = typ {
-                    if module_path.is_empty() {
-                        format!(
-                            "{}_{}",
-                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                            &function.to_string()
-                        )
-                    } else {
-                        format!(
-                            "{}__{}_{}",
-                            module_path.to_string().replace(" :: ", "__"),
-                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                            &function.to_string()
-                        )
-                    }
-                } else {
-                    unimplemented!("Complex self types.")
-                }
-            }
-            None => {
-                if module_path.is_empty() {
-                    function.to_string()
-                } else {
-                    format!(
-                        "{}__{}",
-                        module_path.to_string().replace(" :: ", "__"),
-                        &function.to_string()
-                    )
-                }
-            }
-        }
-    }
-
     fn parse_crate_name(cargo_toml_path: &Path) -> Option<String> {
         let cargo_bytes = {
             let mut cargo_bytes = Vec::new();
@@ -256,6 +214,48 @@ path = "fuzz_targets/"#;
 test = false
 doc = false
 "#;
+}
+
+pub fn construct_harness_ident(
+    function: &Ident,
+    impl_type: Option<&Type>,
+    module_path: &TokenStream,
+) -> String {
+    // Functions in different modules and/or in different impl's can have identical names. To
+    // avoid collisions, this function adds module path and impl type to target filenames.
+    match impl_type {
+        Some(typ) => {
+            if let Type::Path(path) = typ {
+                if module_path.is_empty() {
+                    format!(
+                        "{}_{}",
+                        &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                        &function.to_string()
+                    )
+                } else {
+                    format!(
+                        "{}__{}_{}",
+                        module_path.to_string().replace(" :: ", "__"),
+                        &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                        &function.to_string()
+                    )
+                }
+            } else {
+                unimplemented!("Complex self types.")
+            }
+        }
+        None => {
+            if module_path.is_empty() {
+                function.to_string()
+            } else {
+                format!(
+                    "{}__{}",
+                    module_path.to_string().replace(" :: ", "__"),
+                    &function.to_string()
+                )
+            }
+        }
+    }
 }
 
 #[cfg(test)]
