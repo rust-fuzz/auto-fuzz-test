@@ -6,10 +6,7 @@ use syn::{
     Signature, Stmt, Type,
 };
 
-pub fn fuzz_struct(
-    signature: &Signature,
-    impl_type: Option<&Type>,
-) -> Result<ItemStruct, GenerateError> {
+pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> Result<ItemStruct, Error> {
     // struct for function arguments template
     let mut fuzz_struct: ItemStruct = syn::parse2(quote! {
         #[derive(Arbitrary)]
@@ -31,7 +28,7 @@ pub fn fuzz_struct(
                     &(*signature).ident.to_string()
                 )
             } else {
-                return Err(GenerateError::ComplexSelfType);
+                return Err(Error::ComplexSelfType);
             }
         }
         None => {
@@ -41,6 +38,9 @@ pub fn fuzz_struct(
 
     // Struct fields generation
     if let Fields::Named(ref mut fields) = fuzz_struct.fields {
+        // Here comes an epic destructuring of syn types.
+        // `else` parts of match arms on known data (`fuzz_struct` in this case) are
+        // marked with unreachable! macro, as they are, ahem, unreachable.
         let default_boxed_variable = fields
             .named
             .pop()
@@ -85,18 +85,18 @@ pub fn fuzz_struct(
                                             {
                                                 *new_subpath = Type::Path(path);
                                             } else {
-                                                panic!("Wrong boxed variable template");
+                                                unreachable!("Wrong boxed variable template");
                                             }
                                         } else {
-                                            panic!("Wrong boxed variable template");
+                                            unreachable!("Wrong boxed variable template");
                                         }
                                     } else {
-                                        panic!("Wrong boxed variable template");
+                                        unreachable!("Wrong boxed variable template");
                                     }
                                     // Pushing variable type for the struct field
                                     fields.named.push(variable);
                                 } else {
-                                    return Err(GenerateError::ComplexArg);
+                                    return Err(Error::ComplexArg);
                                 }
                             }
                             Type::Path(path) => {
@@ -109,11 +109,11 @@ pub fn fuzz_struct(
                                 fields.named.push(variable);
                             }
                             _ => {
-                                return Err(GenerateError::ComplexArg);
+                                return Err(Error::ComplexArg);
                             }
                         };
                     } else {
-                        return Err(GenerateError::ComplexVariable);
+                        return Err(Error::ComplexVariable);
                     }
                 }
                 FnArg::Receiver(res) => {
@@ -134,13 +134,13 @@ pub fn fuzz_struct(
                                         {
                                             *new_subpath = (*impl_type).clone();
                                         } else {
-                                            panic!("Wrong boxed variable template");
+                                            unreachable!("Wrong boxed variable template");
                                         }
                                     } else {
-                                        panic!("Wrong boxed variable template");
+                                        unreachable!("Wrong boxed variable template");
                                     }
                                 } else {
-                                    panic!("Wrong boxed variable template");
+                                    unreachable!("Wrong boxed variable template");
                                 }
                                 // Pushing variable type for the struct field
                                 fields.named.push(variable);
@@ -154,7 +154,7 @@ pub fn fuzz_struct(
                                 fields.named.push(variable);
                             }
                         } else {
-                            return Err(GenerateError::ComplexSelfType);
+                            return Err(Error::ComplexSelfType);
                         }
                     } else {
                         panic!("Self type must be supplied for method parsing")
@@ -163,284 +163,279 @@ pub fn fuzz_struct(
             }
         }
     } else {
-        panic!("Struct template must contain named fields");
+        unreachable!("Struct template must contain named fields");
     }
 
     Ok(fuzz_struct)
 }
 
-pub fn fuzz_function(
-    signature: &Signature,
-    impl_type: Option<&Type>,
-) -> Result<ItemFn, GenerateError> {
+pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<ItemFn, Error> {
     // Checking that the function meets our requirements
     if signature.asyncness.is_some() {
-        return Err(GenerateError::Async);
+        return Err(Error::Async);
     }
     if signature.unsafety.is_some() {
-        return Err(GenerateError::Unsafe);
+        return Err(Error::Unsafe);
     }
     if signature.inputs.is_empty() {
-        return Err(GenerateError::Empty);
+        return Err(Error::Empty);
     }
 
     let mut fuzz_function: syn::ItemFn;
 
-    match impl_type {
-        Some(typ) => {
-            match (*signature).inputs.first().unwrap() {
-                FnArg::Receiver(_) => {
-                    // method harness template
-                    fuzz_function = syn::parse2(quote! {
-                        pub fn fuzz(mut input:MyStruct) {
-                            (input.slf).foo(input.a, &mut *input.b);
-                        }
-                    })
-                    .unwrap();
+    if let Some(typ) = impl_type {
+        match (*signature).inputs.first().unwrap() {
+            FnArg::Receiver(_) => {
+                // method harness template
+                fuzz_function = syn::parse2(quote! {
+                    pub fn fuzz(mut input:MyStruct) {
+                        (input.slf).foo(input.a, &mut *input.b);
+                    }
+                })
+                .unwrap();
 
-                    if let Stmt::Semi(Expr::MethodCall(method_call), _) =
-                        &mut fuzz_function.block.stmts[0]
-                    {
-                        // MethodCall inside fuzzing function
-                        method_call.method = (*signature).ident.clone();
+                if let Stmt::Semi(Expr::MethodCall(method_call), _) =
+                    &mut fuzz_function.block.stmts[0]
+                {
+                    // MethodCall inside fuzzing function
+                    method_call.method = (*signature).ident.clone();
 
-                        // Arguments for internal method call
-                        let args = &mut method_call.args;
-                        let default_borrowed_field = args.pop().unwrap().into_value();
-                        let default_field = args.pop().unwrap().into_value();
+                    // Arguments for internal method call
+                    let args = &mut method_call.args;
+                    let default_borrowed_field = args.pop().unwrap().into_value();
+                    let default_field = args.pop().unwrap().into_value();
 
-                        for item in (*signature).inputs.iter().skip(1) {
-                            match item {
-                                FnArg::Typed(i) => {
-                                    if let Pat::Ident(id) = &*i.pat {
-                                        match *i.ty.clone() {
-                                            Type::Reference(rf) => {
-                                                let mut new_field = default_borrowed_field.clone();
-                                                if let Expr::Reference(ref mut new_rf) = new_field {
-                                                    // Copying borrow mutability
-                                                    new_rf.mutability = rf.mutability;
-                                                    // Copying field ident
-                                                    if let Expr::Unary(ref mut new_subfield) =
-                                                        *new_rf.expr
+                    for item in (*signature).inputs.iter().skip(1) {
+                        match item {
+                            FnArg::Typed(i) => {
+                                if let Pat::Ident(id) = &*i.pat {
+                                    match *i.ty.clone() {
+                                        Type::Reference(rf) => {
+                                            let mut new_field = default_borrowed_field.clone();
+                                            if let Expr::Reference(ref mut new_rf) = new_field {
+                                                // Copying borrow mutability
+                                                new_rf.mutability = rf.mutability;
+                                                // Copying field ident
+                                                if let Expr::Unary(ref mut new_subfield) =
+                                                    *new_rf.expr
+                                                {
+                                                    if let Expr::Field(ref mut new_unary_subfield) =
+                                                        *new_subfield.expr
                                                     {
-                                                        if let Expr::Field(
-                                                            ref mut new_unary_subfield,
-                                                        ) = *new_subfield.expr
-                                                        {
-                                                            new_unary_subfield.member =
-                                                                Member::Named(id.ident.clone());
-                                                        } else {
-                                                            panic!("Wrong borrowed field template");
-                                                        }
+                                                        new_unary_subfield.member =
+                                                            Member::Named(id.ident.clone());
                                                     } else {
-                                                        panic!("Wrong borrowed field template");
+                                                        unreachable!(
+                                                            "Wrong borrowed field template"
+                                                        );
                                                     }
                                                 } else {
-                                                    panic!("Wrong borrowed field template");
+                                                    unreachable!("Wrong borrowed field template");
                                                 }
+                                            } else {
+                                                unreachable!("Wrong borrowed field template");
+                                            }
 
-                                                // Pushing arguments to the function call
-                                                args.push(new_field);
+                                            // Pushing arguments to the function call
+                                            args.push(new_field);
+                                        }
+                                        Type::Path(_) => {
+                                            let mut new_field = default_field.clone();
+                                            if let Expr::Field(ref mut f) = new_field {
+                                                f.member = Member::Named(id.ident.clone());
+                                            } else {
+                                                unreachable!("Wrong unborrowed field template");
                                             }
-                                            Type::Path(_) => {
-                                                let mut new_field = default_field.clone();
-                                                if let Expr::Field(ref mut f) = new_field {
-                                                    f.member = Member::Named(id.ident.clone());
-                                                } else {
-                                                    panic!("Wrong unborrowed field template");
-                                                }
-                                                // Pushing arguments to the function call
-                                                args.push(new_field);
-                                            }
-                                            _ => {
-                                                return Err(GenerateError::ComplexArg);
-                                            }
-                                        };
-                                    } else {
-                                        return Err(GenerateError::ComplexSelfType);
-                                    }
-                                }
-                                FnArg::Receiver(_) => {
-                                    return Err(GenerateError::MultipleRes);
+                                            // Pushing arguments to the function call
+                                            args.push(new_field);
+                                        }
+                                        _ => {
+                                            return Err(Error::ComplexArg);
+                                        }
+                                    };
+                                } else {
+                                    return Err(Error::ComplexSelfType);
                                 }
                             }
+                            FnArg::Receiver(_) => {
+                                return Err(Error::MultipleRes);
+                            }
                         }
-                    } else {
-                        panic!("Wrong method call template.")
                     }
+                } else {
+                    unreachable!("Wrong method call template.")
                 }
-                FnArg::Typed(_) => {
-                    // method harness template
-                    fuzz_function = syn::parse2(quote! {
-                        pub fn fuzz(mut input:MyStruct) {
-                            MyType::foo(input.a, &mut *input.b);
-                        }
-                    })
-                    .unwrap();
-                    if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
-                        // FnCall inside fuzzing function
-                        if let Expr::Path(path) = &mut *fn_call.func {
-                            let mut segments_iter = path.path.segments.iter_mut();
-                            if let Type::Path(type_path) = typ {
-                                segments_iter.next().unwrap().ident =
-                                    type_path.path.segments.first().unwrap().ident.clone();
-                            } else {
-                                return Err(GenerateError::ComplexMethodCall);
-                            }
-                            segments_iter.next().unwrap().ident = (*signature).ident.clone();
-                        }
+            }
+            FnArg::Typed(_) => {
+                // method harness template
+                fuzz_function = syn::parse2(quote! {
+                    pub fn fuzz(mut input:MyStruct) {
+                        MyType::foo(input.a, &mut *input.b);
+                    }
+                })
+                .unwrap();
 
-                        // Arguments for internal function call
-                        let args = &mut fn_call.args;
-                        let default_borrowed_field = args.pop().unwrap().into_value();
-                        let default_field = args.pop().unwrap().into_value();
+                if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
+                    // FnCall inside fuzzing function
+                    if let Expr::Path(path) = &mut *fn_call.func {
+                        let mut segments_iter = path.path.segments.iter_mut();
+                        if let Type::Path(type_path) = typ {
+                            segments_iter.next().unwrap().ident =
+                                type_path.path.segments.first().unwrap().ident.clone();
+                        } else {
+                            return Err(Error::ComplexMethodCall);
+                        }
+                        segments_iter.next().unwrap().ident = (*signature).ident.clone();
+                    }
 
-                        for item in (*signature).inputs.iter() {
-                            match item {
-                                FnArg::Typed(i) => {
-                                    if let Pat::Ident(id) = &*i.pat {
-                                        match *i.ty.clone() {
-                                            Type::Reference(rf) => {
-                                                let mut new_field = default_borrowed_field.clone();
-                                                if let Expr::Reference(ref mut new_rf) = new_field {
-                                                    // Copying borrow mutability
-                                                    new_rf.mutability = rf.mutability;
-                                                    // Copying field ident
-                                                    if let Expr::Unary(ref mut new_subfield) =
-                                                        *new_rf.expr
+                    // Arguments for internal function call
+                    let args = &mut fn_call.args;
+                    let default_borrowed_field = args.pop().unwrap().into_value();
+                    let default_field = args.pop().unwrap().into_value();
+
+                    for item in (*signature).inputs.iter() {
+                        match item {
+                            FnArg::Typed(i) => {
+                                if let Pat::Ident(id) = &*i.pat {
+                                    match *i.ty.clone() {
+                                        Type::Reference(rf) => {
+                                            let mut new_field = default_borrowed_field.clone();
+                                            if let Expr::Reference(ref mut new_rf) = new_field {
+                                                // Copying borrow mutability
+                                                new_rf.mutability = rf.mutability;
+                                                // Copying field ident
+                                                if let Expr::Unary(ref mut new_subfield) =
+                                                    *new_rf.expr
+                                                {
+                                                    if let Expr::Field(ref mut new_unary_subfield) =
+                                                        *new_subfield.expr
                                                     {
-                                                        if let Expr::Field(
-                                                            ref mut new_unary_subfield,
-                                                        ) = *new_subfield.expr
-                                                        {
-                                                            new_unary_subfield.member =
-                                                                Member::Named(id.ident.clone());
-                                                        } else {
-                                                            panic!("Wrong borrowed field template");
-                                                        }
+                                                        new_unary_subfield.member =
+                                                            Member::Named(id.ident.clone());
                                                     } else {
-                                                        panic!("Wrong borrowed field template");
+                                                        unreachable!(
+                                                            "Wrong borrowed field template"
+                                                        );
                                                     }
                                                 } else {
-                                                    panic!("Wrong borrowed field template");
+                                                    unreachable!("Wrong borrowed field template");
                                                 }
+                                            } else {
+                                                unreachable!("Wrong borrowed field template");
+                                            }
 
-                                                // Pushing arguments to the function call
-                                                args.push(new_field);
+                                            // Pushing arguments to the function call
+                                            args.push(new_field);
+                                        }
+                                        Type::Path(_) => {
+                                            let mut new_field = default_field.clone();
+                                            if let Expr::Field(ref mut f) = new_field {
+                                                f.member = Member::Named(id.ident.clone());
+                                            } else {
+                                                unreachable!("Wrong unborrowed field template");
                                             }
-                                            Type::Path(_) => {
-                                                let mut new_field = default_field.clone();
-                                                if let Expr::Field(ref mut f) = new_field {
-                                                    f.member = Member::Named(id.ident.clone());
-                                                } else {
-                                                    panic!("Wrong unborrowed field template");
-                                                }
-                                                // Pushing arguments to the function call
-                                                args.push(new_field);
-                                            }
-                                            _ => {
-                                                return Err(GenerateError::ComplexArg);
-                                            }
-                                        };
-                                    } else {
-                                        return Err(GenerateError::ComplexSelfType);
-                                    }
-                                }
-                                FnArg::Receiver(_) => {
-                                    panic!(
-                                        "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
-                                    )
+                                            // Pushing arguments to the function call
+                                            args.push(new_field);
+                                        }
+                                        _ => {
+                                            return Err(Error::ComplexArg);
+                                        }
+                                    };
+                                } else {
+                                    return Err(Error::ComplexSelfType);
                                 }
                             }
+                            FnArg::Receiver(_) => {
+                                panic!(
+                                    "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
+                                )
+                            }
                         }
-                    } else {
-                        panic!("Wrong generator call template.")
                     }
+                } else {
+                    unreachable!("Wrong generator call template.")
                 }
             }
         }
-        None => {
-            // function harness template
-            fuzz_function = syn::parse2(quote! {
-                pub fn fuzz(mut input:MyStruct) {
-                    foo(input.a, &mut *input.b);
-                }
-            })
-            .unwrap();
+    } else {
+        // function harness template
+        fuzz_function = syn::parse2(quote! {
+            pub fn fuzz(mut input:MyStruct) {
+                foo(input.a, &mut *input.b);
+            }
+        })
+        .unwrap();
 
-            if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
-                // FnCall inside fuzzing function
-                if let Expr::Path(path) = &mut *fn_call.func {
-                    path.path.segments.iter_mut().next().unwrap().ident =
-                        (*signature).ident.clone();
-                } else {
-                    panic!("Wrong function harness template.")
-                }
+        if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
+            // FnCall inside fuzzing function
+            if let Expr::Path(path) = &mut *fn_call.func {
+                path.path.segments.iter_mut().next().unwrap().ident = (*signature).ident.clone();
+            } else {
+                unreachable!("Wrong function harness template.")
+            }
 
-                // Arguments for internal function call
-                let args = &mut fn_call.args;
-                let default_borrowed_field = args.pop().unwrap().into_value();
-                let default_field = args.pop().unwrap().into_value();
+            // Arguments for internal function call
+            let args = &mut fn_call.args;
+            let default_borrowed_field = args.pop().unwrap().into_value();
+            let default_field = args.pop().unwrap().into_value();
 
-                for item in (*signature).inputs.iter() {
-                    match item {
-                        FnArg::Typed(i) => {
-                            if let Pat::Ident(id) = &*i.pat {
-                                match *i.ty.clone() {
-                                    Type::Reference(rf) => {
-                                        let mut new_field = default_borrowed_field.clone();
-                                        if let Expr::Reference(ref mut new_rf) = new_field {
-                                            // Copying borrow mutability
-                                            new_rf.mutability = rf.mutability;
-                                            // Copying field ident
-                                            if let Expr::Unary(ref mut new_subfield) = *new_rf.expr
+            for item in (*signature).inputs.iter() {
+                match item {
+                    FnArg::Typed(i) => {
+                        if let Pat::Ident(id) = &*i.pat {
+                            match *i.ty.clone() {
+                                Type::Reference(rf) => {
+                                    let mut new_field = default_borrowed_field.clone();
+                                    if let Expr::Reference(ref mut new_rf) = new_field {
+                                        // Copying borrow mutability
+                                        new_rf.mutability = rf.mutability;
+                                        // Copying field ident
+                                        if let Expr::Unary(ref mut new_subfield) = *new_rf.expr {
+                                            if let Expr::Field(ref mut new_unary_subfield) =
+                                                *new_subfield.expr
                                             {
-                                                if let Expr::Field(ref mut new_unary_subfield) =
-                                                    *new_subfield.expr
-                                                {
-                                                    new_unary_subfield.member =
-                                                        Member::Named(id.ident.clone());
-                                                } else {
-                                                    panic!("Wrong borrowed field template");
-                                                }
+                                                new_unary_subfield.member =
+                                                    Member::Named(id.ident.clone());
                                             } else {
-                                                panic!("Wrong borrowed field template");
+                                                unreachable!("Wrong borrowed field template");
                                             }
                                         } else {
-                                            panic!("Wrong borrowed field template");
+                                            unreachable!("Wrong borrowed field template");
                                         }
+                                    } else {
+                                        unreachable!("Wrong borrowed field template");
+                                    }
 
-                                        // Pushing arguments to the function call
-                                        args.push(new_field);
+                                    // Pushing arguments to the function call
+                                    args.push(new_field);
+                                }
+                                Type::Path(_) => {
+                                    let mut new_field = default_field.clone();
+                                    if let Expr::Field(ref mut f) = new_field {
+                                        f.member = Member::Named(id.ident.clone());
+                                    } else {
+                                        unreachable!("Wrong unborrowed field template");
                                     }
-                                    Type::Path(_) => {
-                                        let mut new_field = default_field.clone();
-                                        if let Expr::Field(ref mut f) = new_field {
-                                            f.member = Member::Named(id.ident.clone());
-                                        } else {
-                                            panic!("Wrong unborrowed field template");
-                                        }
-                                        // Pushing arguments to the function call
-                                        args.push(new_field);
-                                    }
-                                    _ => {
-                                        return Err(GenerateError::ComplexArg);
-                                    }
-                                };
-                            } else {
-                                return Err(GenerateError::ComplexVariable);
-                            }
-                        }
-                        FnArg::Receiver(_) => {
-                            panic!(
-                                "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
-                            );
+                                    // Pushing arguments to the function call
+                                    args.push(new_field);
+                                }
+                                _ => {
+                                    return Err(Error::ComplexArg);
+                                }
+                            };
+                        } else {
+                            return Err(Error::ComplexVariable);
                         }
                     }
+                    FnArg::Receiver(_) => {
+                        panic!(
+                            "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
+                        );
+                    }
                 }
-            } else {
-                panic!("Wrong function call template.");
             }
+        } else {
+            unreachable!("Wrong function call template.");
         }
     }
 
@@ -456,7 +451,7 @@ pub fn fuzz_function(
                             &(*signature).ident.to_string()
                         )
                     } else {
-                        return Err(GenerateError::ComplexSelfType);
+                        return Err(Error::ComplexSelfType);
                     }
                 }
                 None => {
@@ -476,7 +471,7 @@ pub fn fuzz_function(
                     &(*signature).ident.to_string()
                 )
             } else {
-                return Err(GenerateError::ComplexSelfType);
+                return Err(Error::ComplexSelfType);
             }
         }
         None => {
@@ -503,7 +498,7 @@ pub fn fuzz_harness(
                     &(*signature).ident.to_string()
                 )
             } else {
-                panic!("Complex self type.")
+                unimplemented!("Complex self type.")
             }
         }
         None => {
@@ -520,7 +515,7 @@ pub fn fuzz_harness(
                     &(*signature).ident.to_string()
                 )
             } else {
-                panic!("Complex self type.")
+                unimplemented!("Complex self type.")
             }
         }
         None => {
@@ -529,10 +524,10 @@ pub fn fuzz_harness(
     };
 
     let path = {
-        if !attr.is_empty() {
-            quote!(#crate_ident :: #attr ::)
-        } else {
+        if attr.is_empty() {
             quote!(#crate_ident ::)
+        } else {
+            quote!(#crate_ident :: #attr ::)
         }
     };
 
@@ -551,7 +546,7 @@ pub fn fuzz_harness(
 }
 
 #[derive(Debug, PartialEq)]
-pub enum GenerateError {
+pub enum Error {
     Unsafe,
     Async,
     Empty,
@@ -562,17 +557,17 @@ pub enum GenerateError {
     ComplexVariable,
 }
 
-impl fmt::Display for GenerateError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let err_msg = match self {
-            GenerateError::Async => "Can not fuzz async functions.",
-            GenerateError::Unsafe => "unsafe functions can not be fuzzed automatically.",
-            GenerateError::Empty => "It is useless to fuzz function without input parameters.",
-            GenerateError::ComplexArg => "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)",
-            GenerateError::ComplexSelfType => "Only implementations for simple (like `MyType`) types are supported",
-            GenerateError::MultipleRes => "Muptiple Self values in function args.",
-            GenerateError::ComplexMethodCall => "Complex method calls are not currently supported.",
-            GenerateError::ComplexVariable => "Complex variables (like `&mut *a`) are not supported",
+            Error::Async => "Can not fuzz async functions.",
+            Error::Unsafe => "unsafe functions can not be fuzzed automatically.",
+            Error::Empty => "It is useless to fuzz function without input parameters.",
+            Error::ComplexArg => "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)",
+            Error::ComplexSelfType => "Only implementations for simple (like `MyType`) types are supported",
+            Error::MultipleRes => "Muptiple Self values in function args.",
+            Error::ComplexMethodCall => "Complex method calls are not currently supported.",
+            Error::ComplexVariable => "Complex variables (like `&mut *a`) are not supported",
         };
 
         write!(f, "{}", err_msg)
@@ -709,10 +704,7 @@ mod tests {
             }
         })
         .unwrap();
-        assert_eq!(
-            fuzz_struct(&function.sig, None),
-            Err(GenerateError::ComplexArg)
-        );
+        assert_eq!(fuzz_struct(&function.sig, None), Err(Error::ComplexArg));
     }
 
     #[test]
@@ -729,7 +721,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fuzz_struct(&function.sig, None),
-            Err(GenerateError::ComplexVariable)
+            Err(Error::ComplexVariable)
         );
     }
 
@@ -814,7 +806,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fuzz_function(&function.sig, None),
-            Err(GenerateError::ComplexVariable)
+            Err(Error::ComplexVariable)
         );
     }
 
@@ -830,10 +822,7 @@ mod tests {
             }
         })
         .unwrap();
-        assert_eq!(
-            fuzz_function(&function.sig, None),
-            Err(GenerateError::Empty)
-        );
+        assert_eq!(fuzz_function(&function.sig, None), Err(Error::Empty));
     }
 
     #[test]

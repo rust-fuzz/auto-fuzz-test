@@ -24,11 +24,14 @@ impl CrateInfo {
         let mut entries = path.read_dir().ok()?;
         let cargo_toml_present = entries.any(|result| {
             result
-                .map(|entry| entry.file_name().to_string_lossy() == "Cargo.toml")
+                .map(|entry| match entry.file_name().to_str() {
+                    Some(filename) => filename == "Cargo.toml",
+                    None => false,
+                })
                 .unwrap_or(false)
         });
         if cargo_toml_present {
-            if let Some(crate_name) = parse_crate_name(&path.join("Cargo.toml")) {
+            if let Some(crate_name) = CrateInfo::parse_crate_name(&path.join("Cargo.toml")) {
                 Some(CrateInfo {
                     crate_root: path.to_path_buf(),
                     crate_name,
@@ -46,31 +49,12 @@ impl CrateInfo {
     }
 
     pub fn fuzz_dir(&self) -> std::io::Result<PathBuf> {
-        let fuzz_dir_path = self.crate_root.join("fuzz");
-        let fuzz_targets_dir_path = self.crate_root.join("fuzz").join("fuzz_targets");
-        match std::fs::create_dir(&fuzz_dir_path) {
-            Ok(_) => match std::fs::create_dir(&fuzz_targets_dir_path) {
-                Ok(_) => Ok(fuzz_targets_dir_path),
-                Err(e) => {
-                    if e.kind() == std::io::ErrorKind::AlreadyExists {
-                        Ok(fuzz_targets_dir_path)
-                    } else {
-                        Err(e)
-                    }
-                }
-            },
+        let fuzz_dir_path = self.crate_root.join("fuzz").join("fuzz_targets");
+        match std::fs::create_dir_all(&fuzz_dir_path) {
+            Ok(_) => Ok(fuzz_dir_path),
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    match std::fs::create_dir(&fuzz_targets_dir_path) {
-                        Ok(_) => Ok(fuzz_targets_dir_path),
-                        Err(e) => {
-                            if e.kind() == std::io::ErrorKind::AlreadyExists {
-                                Ok(fuzz_targets_dir_path)
-                            } else {
-                                Err(e)
-                            }
-                        }
-                    }
+                    Ok(fuzz_dir_path)
                 } else {
                     Err(e)
                 }
@@ -78,75 +62,41 @@ impl CrateInfo {
         }
     }
 
-    pub fn write_cargo_toml(
+    pub fn add_target_to_cargo_toml(
         &self,
         function: &Ident,
         impl_type: Option<&Type>,
-        attr: &TokenStream,
+        module_path: &TokenStream,
     ) -> Result<(), Error> {
-        // This is used to distinguish functions with the same names but in different modules
-        let ident = match impl_type {
-            Some(typ) => {
-                if let Type::Path(path) = typ {
-                    if attr.is_empty() {
-                        format!(
-                            "{}_{}",
-                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                            &function.to_string()
-                        )
-                    } else {
-                        format!(
-                            "{}__{}_{}",
-                            attr.to_string().replace(" :: ", "__"),
-                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                            &function.to_string()
-                        )
-                    }
-                } else {
-                    panic!("Complex self type.")
-                }
-            }
-            None => {
-                if attr.is_empty() {
-                    function.to_string()
-                } else {
-                    format!(
-                        "{}__{}",
-                        attr.to_string().replace(" :: ", "__"),
-                        &function.to_string()
-                    )
-                }
-            }
-        };
+        let ident = construct_harness_ident(function, impl_type, module_path);
 
-        match OpenOptions::new().write(true).create_new(true).open(
-            self.fuzz_dir()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .join("Cargo.toml"),
-        ) {
+        let cargo_toml_path = self.fuzz_dir()?.parent().unwrap().join("Cargo.toml");
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&cargo_toml_path)
+        {
             Ok(mut file) => {
                 file.lock_exclusive()?;
 
                 write!(
                     file,
                     "{}{}{}{}{}",
-                    &CARGO_TOML_TEMPLATE_PREFIX,
+                    &CrateInfo::CARGO_TOML_TEMPLATE_PREFIX,
                     &self.crate_name(),
-                    &CARGO_TOML_TEMPLATE_INFIX,
+                    &CrateInfo::CARGO_TOML_TEMPLATE_INFIX,
                     &self.crate_name(),
-                    &CARGO_TOML_TEMPLATE_POSTFIX
+                    &CrateInfo::CARGO_TOML_TEMPLATE_POSTFIX
                 )?;
 
                 write!(
                     file,
                     "{}{}{}{}{}",
-                    &TARGET_TEMPLATE_PREFIX,
+                    &CrateInfo::TARGET_TEMPLATE_PREFIX,
                     &ident,
-                    &TARGET_TEMPLATE_INFIX,
+                    &CrateInfo::TARGET_TEMPLATE_INFIX,
                     &ident,
-                    &TARGET_TEMPLATE_POSTFIX
+                    &CrateInfo::TARGET_TEMPLATE_POSTFIX
                 )?;
                 file.flush()?;
 
@@ -159,26 +109,21 @@ impl CrateInfo {
                         .read(true)
                         .write(true)
                         .append(true)
-                        .open(
-                            self.fuzz_dir()
-                                .unwrap()
-                                .parent()
-                                .unwrap()
-                                .join("Cargo.toml"),
-                        )?;
+                        .open(&cargo_toml_path)?;
                     file.lock_exclusive()?;
 
                     // Checking, that we are not going to duplicate [[bin]] targets
                     let mut buffer = String::new();
                     file.read_to_string(&mut buffer)?;
+                    // Generated Cargo.toml consists of several sections splitted by '\n\n'
+                    // Here we split and skip the first 5 of them: [package], [package.metadata], [dependencies], [dependencies.<crate_name>] and [workspace]
                     let parts = buffer.split("\n\n");
-                    let fuzz_target_exists = parts
-                        .skip(5)
-                        .map(|item| {
-                            if let TomlTable(table) =
-                                &item.lines().nth(1).unwrap().parse::<TomlValue>().unwrap()
-                            {
-                                if let TomlString(s) = table.get("name").unwrap() {
+                    let fuzz_target_exists = parts.skip(5).any(|item| {
+                        // In this closure we extract target ident and compare it with the one we want to add.
+                        // If anything goes wrong, this closure returns `false`.
+                        if let Some(target_name_line) = item.lines().nth(1) {
+                            if let Ok(TomlTable(table)) = &target_name_line.parse::<TomlValue>() {
+                                if let Some(TomlString(s)) = table.get("name") {
                                     s == &ident
                                 } else {
                                     false
@@ -186,17 +131,19 @@ impl CrateInfo {
                             } else {
                                 false
                             }
-                        })
-                        .fold(false, |acc, x| acc | x);
+                        } else {
+                            false
+                        }
+                    });
                     if !fuzz_target_exists {
                         write!(
                             file,
                             "{}{}{}{}{}",
-                            &TARGET_TEMPLATE_PREFIX,
+                            &CrateInfo::TARGET_TEMPLATE_PREFIX,
                             &ident,
-                            &TARGET_TEMPLATE_INFIX,
+                            &CrateInfo::TARGET_TEMPLATE_INFIX,
                             &ident,
-                            &TARGET_TEMPLATE_POSTFIX
+                            &CrateInfo::TARGET_TEMPLATE_POSTFIX
                         )?;
                         file.flush()?;
                     }
@@ -209,33 +156,32 @@ impl CrateInfo {
             }
         }
     }
-}
 
-fn parse_crate_name(cargo_toml_path: &Path) -> Option<String> {
-    let cargo_bytes = {
-        let mut cargo_bytes = Vec::new();
-        File::open(cargo_toml_path)
-            .ok()?
-            .read_to_end(&mut cargo_bytes)
-            .ok()?;
-        cargo_bytes
-    };
+    fn parse_crate_name(cargo_toml_path: &Path) -> Option<String> {
+        let cargo_bytes = {
+            let mut cargo_bytes = Vec::new();
+            File::open(cargo_toml_path)
+                .ok()?
+                .read_to_end(&mut cargo_bytes)
+                .ok()?;
+            cargo_bytes
+        };
 
-    let cargo_toml: TomlValue = toml::from_slice(&cargo_bytes).ok()?;
+        let cargo_toml: TomlValue = toml::from_slice(&cargo_bytes).ok()?;
 
-    Some(
-        cargo_toml
-            .get("package")?
-            .get("name")?
-            .as_str()?
-            .to_string(),
-    )
-}
+        Some(
+            cargo_toml
+                .get("package")?
+                .get("name")?
+                .as_str()?
+                .to_string(),
+        )
+    }
 
-const CARGO_TOML_TEMPLATE_PREFIX: &str = r#"[package]
+    const CARGO_TOML_TEMPLATE_PREFIX: &'static str = r#"[package]
 name = ""#;
 
-const CARGO_TOML_TEMPLATE_INFIX: &str = r#"-fuzz"
+    const CARGO_TOML_TEMPLATE_INFIX: &'static str = r#"-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
 publish = false
@@ -249,7 +195,7 @@ libfuzzer-sys = "0.4"
 
 [dependencies."#;
 
-const CARGO_TOML_TEMPLATE_POSTFIX: &str = r#"]
+    const CARGO_TOML_TEMPLATE_POSTFIX: &'static str = r#"]
 path = ".."
 
 # Prevent this from interfering with workspaces
@@ -257,17 +203,60 @@ path = ".."
 members = ["."]
 "#;
 
-const TARGET_TEMPLATE_PREFIX: &str = r#"
+    const TARGET_TEMPLATE_PREFIX: &'static str = r#"
 [[bin]]
 name = ""#;
 
-const TARGET_TEMPLATE_INFIX: &str = r#""
+    const TARGET_TEMPLATE_INFIX: &'static str = r#""
 path = "fuzz_targets/"#;
 
-const TARGET_TEMPLATE_POSTFIX: &str = r#".rs"
+    const TARGET_TEMPLATE_POSTFIX: &'static str = r#".rs"
 test = false
 doc = false
 "#;
+}
+
+pub fn construct_harness_ident(
+    function: &Ident,
+    impl_type: Option<&Type>,
+    module_path: &TokenStream,
+) -> String {
+    // Functions in different modules and/or in different impl's can have identical names. To
+    // avoid collisions, this function adds module path and impl type to target filenames.
+    match impl_type {
+        Some(typ) => {
+            if let Type::Path(path) = typ {
+                if module_path.is_empty() {
+                    format!(
+                        "{}_{}",
+                        &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                        &function.to_string()
+                    )
+                } else {
+                    format!(
+                        "{}__{}_{}",
+                        module_path.to_string().replace(" :: ", "__"),
+                        &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                        &function.to_string()
+                    )
+                }
+            } else {
+                unimplemented!("Complex self types.")
+            }
+        }
+        None => {
+            if module_path.is_empty() {
+                function.to_string()
+            } else {
+                format!(
+                    "{}__{}",
+                    module_path.to_string().replace(" :: ", "__"),
+                    &function.to_string()
+                )
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 impl PartialEq for CrateInfo {
@@ -299,7 +288,7 @@ mod tests {
         let cargo_toml_path = dir.path().join("Cargo.toml");
         File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
 
-        assert_eq!(parse_crate_name(&cargo_toml_path), None);
+        assert_eq!(CrateInfo::parse_crate_name(&cargo_toml_path), None);
     }
 
     #[test]
@@ -312,7 +301,7 @@ mod tests {
             .expect("Could not write valid data to Cargo.toml fot test");
 
         assert_eq!(
-            parse_crate_name(&cargo_toml_path),
+            CrateInfo::parse_crate_name(&cargo_toml_path),
             Some("test-lib".to_string())
         );
     }
@@ -334,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn write_cargo_noattr_noimpl() {
+    fn write_cargo_nomodule_noimpl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
         let cargo_toml_path = dir.path().join("Cargo.toml");
         let mut cargo_toml =
@@ -344,20 +333,24 @@ mod tests {
         let crate_info = CrateInfo::from_root(dir.path()).unwrap();
 
         let ident = format_ident!("foo");
-        let attr = TokenStream::new();
+        let module = TokenStream::new();
 
-        crate_info.write_cargo_toml(&ident, None, &attr).unwrap();
+        crate_info
+            .add_target_to_cargo_toml(&ident, None, &module)
+            .unwrap();
 
-        crate_info.write_cargo_toml(&ident, None, &attr).unwrap();
+        crate_info
+            .add_target_to_cargo_toml(&ident, None, &module)
+            .unwrap();
 
         let mut cargo_toml = File::open(dir.path().join("fuzz").join("Cargo.toml")).unwrap();
         let mut cargo_contents = String::new();
         cargo_toml.read_to_string(&mut cargo_contents).unwrap();
-        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_NOATTR_NOIMPL);
+        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_NOMODULE_NOIMPL);
     }
 
     #[test]
-    fn write_cargo_attr_noimpl() {
+    fn write_cargo_module_noimpl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
         let cargo_toml_path = dir.path().join("Cargo.toml");
         let mut cargo_toml =
@@ -367,20 +360,24 @@ mod tests {
         let crate_info = CrateInfo::from_root(dir.path()).unwrap();
 
         let ident = format_ident!("cat");
-        let attr = quote!(foo::bar::dog);
+        let module = quote!(foo::bar::dog);
 
-        crate_info.write_cargo_toml(&ident, None, &attr).unwrap();
+        crate_info
+            .add_target_to_cargo_toml(&ident, None, &module)
+            .unwrap();
 
-        crate_info.write_cargo_toml(&ident, None, &attr).unwrap();
+        crate_info
+            .add_target_to_cargo_toml(&ident, None, &module)
+            .unwrap();
 
         let mut cargo_toml = File::open(dir.path().join("fuzz").join("Cargo.toml")).unwrap();
         let mut cargo_contents = String::new();
         cargo_toml.read_to_string(&mut cargo_contents).unwrap();
-        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_ATTR_NOIMPL);
+        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_MODULE_NOIMPL);
     }
 
     #[test]
-    fn write_cargo_noattr_impl() {
+    fn write_cargo_nomodule_impl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
         let cargo_toml_path = dir.path().join("Cargo.toml");
         let mut cargo_toml =
@@ -395,23 +392,23 @@ mod tests {
             }
         })
         .unwrap();
-        let attr = TokenStream::new();
+        let module = TokenStream::new();
 
         crate_info
-            .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+            .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
             .unwrap();
         crate_info
-            .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+            .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
             .unwrap();
 
         let mut cargo_toml = File::open(dir.path().join("fuzz").join("Cargo.toml")).unwrap();
         let mut cargo_contents = String::new();
         cargo_toml.read_to_string(&mut cargo_contents).unwrap();
-        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_NOATTR_IMPL);
+        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_NOMODULE_IMPL);
     }
 
     #[test]
-    fn write_cargo_attr_impl() {
+    fn write_cargo_module_impl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
         let cargo_toml_path = dir.path().join("Cargo.toml");
         let mut cargo_toml =
@@ -426,19 +423,19 @@ mod tests {
             }
         })
         .unwrap();
-        let attr = quote!(foo::bar::dog);
+        let module = quote!(foo::bar::dog);
 
         crate_info
-            .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+            .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
             .unwrap();
         crate_info
-            .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+            .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
             .unwrap();
 
         let mut cargo_toml = File::open(dir.path().join("fuzz").join("Cargo.toml")).unwrap();
         let mut cargo_contents = String::new();
         cargo_toml.read_to_string(&mut cargo_contents).unwrap();
-        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_ATTR_IMPL);
+        assert_eq!(cargo_contents, VALID_GENERATED_CARGO_TOML_MODULE_IMPL);
     }
 
     #[test]
@@ -474,78 +471,78 @@ mod tests {
         let handle_1 = thread::spawn(move || {
             // 1
             let ident = format_ident!("foo");
-            let attr = quote!();
+            let module = quote!();
             crate_info_thread_1
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
 
             // 3
             let ident = format_ident!("foo");
-            let attr = quote!(foo);
+            let module = quote!(foo);
             crate_info_thread_1
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
 
             // 5
             let ident = format_ident!("cat");
-            let attr = quote!(foo::bar::dog);
+            let module = quote!(foo::bar::dog);
             crate_info_thread_1
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
 
             // 7
             let ident = format_ident!("bar");
-            let attr = quote!();
+            let module = quote!();
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_1
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 3
             let ident = format_ident!("foo");
-            let attr = quote!(foo);
+            let module = quote!(foo);
             crate_info_thread_1
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
 
             // 7
             let ident = format_ident!("foo");
-            let attr = quote!();
+            let module = quote!();
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_1
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 9
             let ident = format_ident!("foo");
-            let attr = quote!(foo);
+            let module = quote!(foo);
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_1
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 11
             let ident = format_ident!("foo");
-            let attr = quote!(foo::bar);
+            let module = quote!(foo::bar);
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_1
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
         });
 
@@ -553,114 +550,118 @@ mod tests {
         let handle_2 = thread::spawn(move || {
             // 6
             let ident = format_ident!("dog");
-            let attr = quote!(foo::bar::dog);
+            let module = quote!(foo::bar::dog);
             crate_info_thread_2
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
 
             // 8
             let ident = format_ident!("bar");
-            let attr = quote!();
+            let module = quote!();
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_2
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 10
             let ident = format_ident!("bar");
-            let attr = quote!(foo);
+            let module = quote!(foo);
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_2
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 12
             let ident = format_ident!("bar");
-            let attr = quote!(foo::bar);
+            let module = quote!(foo::bar);
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_2
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 6
             let ident = format_ident!("dog");
-            let attr = quote!(foo::bar::dog);
+            let module = quote!(foo::bar::dog);
             crate_info_thread_2
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
 
             // 10
             let ident = format_ident!("bar");
-            let attr = quote!(foo);
+            let module = quote!(foo);
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info_thread_2
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 2
             let ident = format_ident!("bar");
-            let attr = quote!();
+            let module = quote!();
             crate_info_thread_2
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
 
             // 4
             let ident = format_ident!("bar");
-            let attr = quote!(foo);
+            let module = quote!(foo);
             crate_info_thread_2
-                .write_cargo_toml(&ident, None, &attr)
+                .add_target_to_cargo_toml(&ident, None, &module)
                 .unwrap();
         });
 
         {
             // 9
             let ident = format_ident!("foo");
-            let attr = quote!(foo);
+            let module = quote!(foo);
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
 
             // 2
             let ident = format_ident!("bar");
-            let attr = quote!();
-            crate_info.write_cargo_toml(&ident, None, &attr).unwrap();
+            let module = quote!();
+            crate_info
+                .add_target_to_cargo_toml(&ident, None, &module)
+                .unwrap();
 
             // 4
             let ident = format_ident!("bar");
-            let attr = quote!(foo);
-            crate_info.write_cargo_toml(&ident, None, &attr).unwrap();
+            let module = quote!(foo);
+            crate_info
+                .add_target_to_cargo_toml(&ident, None, &module)
+                .unwrap();
 
             // 11
             let ident = format_ident!("foo");
-            let attr = quote!(foo::bar);
+            let module = quote!(foo::bar);
             let implementation: ItemImpl = syn::parse2(quote! {
                 impl TestStruct {
                 }
             })
             .unwrap();
             crate_info
-                .write_cargo_toml(&ident, Some(&implementation.self_ty), &attr)
+                .add_target_to_cargo_toml(&ident, Some(&implementation.self_ty), &module)
                 .unwrap();
         }
 
@@ -710,7 +711,7 @@ auto-fuzz-test = { path = "../"  }
 arbitrary = { version = "1", features = ["derive"]  }
 "#;
 
-    const VALID_GENERATED_CARGO_TOML_NOATTR_NOIMPL: &str = r#"[package]
+    const VALID_GENERATED_CARGO_TOML_NOMODULE_NOIMPL: &str = r#"[package]
 name = "test-lib-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
@@ -737,7 +738,7 @@ test = false
 doc = false
 "#;
 
-    const VALID_GENERATED_CARGO_TOML_ATTR_NOIMPL: &str = r#"[package]
+    const VALID_GENERATED_CARGO_TOML_MODULE_NOIMPL: &str = r#"[package]
 name = "test-lib-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
@@ -764,7 +765,7 @@ test = false
 doc = false
 "#;
 
-    const VALID_GENERATED_CARGO_TOML_NOATTR_IMPL: &str = r#"[package]
+    const VALID_GENERATED_CARGO_TOML_NOMODULE_IMPL: &str = r#"[package]
 name = "test-lib-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
@@ -791,7 +792,7 @@ test = false
 doc = false
 "#;
 
-    const VALID_GENERATED_CARGO_TOML_ATTR_IMPL: &str = r#"[package]
+    const VALID_GENERATED_CARGO_TOML_MODULE_IMPL: &str = r#"[package]
 name = "test-lib-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]

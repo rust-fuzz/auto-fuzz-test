@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 use std::env;
 use std::fs;
 use syn::{ImplItem, ItemFn, ItemImpl, ItemStruct, Type};
@@ -43,11 +43,7 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
     let crate_ident = format_ident!("{}", &crate_name_underscored);
 
     // Writing fuzzing harness to file
-    let ident = if attr.is_empty() {
-        function.sig.ident.to_string()
-    } else {
-        attr.to_string().replace("::", "__") + "__" + &function.sig.ident.to_string()
-    };
+    let ident = crate_parse::construct_harness_ident(&function.sig.ident, None, &attr);
 
     let code = generate::fuzz_harness(&function.sig, None, &crate_ident, &attr);
 
@@ -59,7 +55,7 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
     // TODO: Error handing
 
     crate_info
-        .write_cargo_toml(&function.sig.ident, None, &attr)
+        .add_target_to_cargo_toml(&function.sig.ident, None, &attr)
         .expect("Failed to update Cargo.toml");
 
     quote!(
@@ -95,7 +91,7 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
     let mut fuzz_structs = Vec::<ItemStruct>::new();
     let mut fuzz_functions = Vec::<ItemFn>::new();
 
-    for item in implementation.items.iter() {
+    for item in &implementation.items {
         if let ImplItem::Method(method) = item {
             let fuzz_struct_result =
                 generate::fuzz_struct(&method.sig, Some(&implementation.self_ty));
@@ -105,22 +101,32 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
             match (fuzz_struct_result, fuzz_function_result) {
                 (Ok(fuzz_struct), Ok(fuzz_function)) => {
                     // Writing fuzzing harness to file
-                    let code = generate::fuzz_harness(&method.sig, Some(&implementation.self_ty), &crate_ident, &attr);
+                    let code = generate::fuzz_harness(
+                        &method.sig,
+                        Some(&implementation.self_ty),
+                        &crate_ident,
+                        &attr,
+                    );
                     let filename = if let Type::Path(ref path) = *implementation.self_ty {
-                        format!("{}_{}.rs", &(path.path.segments.iter().next().unwrap().ident).to_string(), &method.sig.ident.to_string())
+                        format!(
+                            "{}_{}.rs",
+                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
+                            &method.sig.ident.to_string()
+                        )
                     } else {
                         panic!("Complex self type.")
                     };
 
-                    fs::write(
-                        fuzz_dir_path.join(filename),
-                        code.to_string(),
-                    )
-                    .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
+                    fs::write(fuzz_dir_path.join(filename), code.to_string())
+                        .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
                     // TODO: Error handing
 
                     crate_info
-                        .write_cargo_toml(&method.sig.ident,Some(&implementation.self_ty), &attr)
+                        .add_target_to_cargo_toml(
+                            &method.sig.ident,
+                            Some(&implementation.self_ty),
+                            &attr,
+                        )
                         .expect("Failed to update Cargo.toml");
                     fuzz_structs.push(fuzz_struct);
                     fuzz_functions.push(fuzz_function);
@@ -141,8 +147,6 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                     continue;
                 }
             }
-        } else {
-            continue;
         }
     }
 
