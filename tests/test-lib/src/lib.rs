@@ -13,33 +13,29 @@ pub fn fn_borrow(string: &str) -> usize {
     string.len()
 }
 
-//#[create_cargofuzz_harness]
-//pub fn fn_sliced(slice: &[u8]) -> usize {
-    //slice.len()
-//}
+#[create_cargofuzz_harness]
+pub fn fn_borrow_mut(num: &mut i32) {
+    *num += 1;
+}
 
 pub mod module;
 
 #[derive(Arbitrary, Debug)]
-pub struct TestStruct {
+pub struct ImplBlock {
     a: u64,
     b: u64,
 }
 #[create_cargofuzz_impl_harness]
-impl TestStruct {
-    pub fn new(a: u64, b: u64) -> TestStruct {
-        TestStruct { a, b }
+impl ImplBlock {
+    pub fn generator(a: u64, b: u64) -> ImplBlock {
+        ImplBlock { a, b }
     }
 
-    pub fn get_a(&self) -> u64 {
+    pub fn borrow(&self) -> u64 {
         self.a
     }
 
-    pub fn set_b(&mut self, b: u64) {
+    pub fn borrow_mut(&mut self, b: u64) {
         self.b = b;
-    }
-
-    pub fn multiply(&mut self) {
-        self.a *= self.b;
     }
 }

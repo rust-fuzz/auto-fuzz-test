@@ -4,9 +4,18 @@ use test_case::test_case;
 
 mod runner;
 
-//#[test_case("fn_sliced")]
-#[test_case("fn_no_borrow")]
+#[test_case("ImplBlock_borrow")]
+#[test_case("ImplBlock_borrow_mut")]
+#[test_case("ImplBlock_generator")]
 #[test_case("fn_borrow")]
+#[test_case("fn_borrow_mut")]
+#[test_case("fn_no_borrow")]
+#[test_case("module__fn_borrow")]
+#[test_case("module__fn_borrow_mut")]
+#[test_case("module__fn_no_borrow")]
+#[test_case("module__ImplBlock_borrow")]
+#[test_case("module__ImplBlock_borrow_mut")]
+#[test_case("module__ImplBlock_generator")]
 fn target(target_name: &str) {
     let source_dir = env::var_os("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)

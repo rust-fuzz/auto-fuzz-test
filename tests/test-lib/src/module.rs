@@ -1,17 +1,34 @@
 #[create_cargofuzz_harness(module)]
-pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool) -> u64 {
-    if crash_on_overflow {
-        a.checked_mul(b).expect("Overflow has occurred")
-    } else {
-        a.overflowing_mul(b).0
-    }
+pub fn fn_no_borrow(string: String) -> usize {
+    string.len()
 }
 
 #[create_cargofuzz_harness(module)]
-pub fn maybe_checked_mul_borrowed(a: &mut u64, b: u64, crash_on_overflow: bool) {
-    if crash_on_overflow {
-        *a = a.checked_mul(b).expect("Overflow has occurred");
-    } else {
-        *a = a.overflowing_mul(b).0;
+pub fn fn_borrow(string: &str) -> usize {
+    string.len()
+}
+
+#[create_cargofuzz_harness(module)]
+pub fn fn_borrow_mut(num: &mut i32) {
+    *num += 1;
+}
+
+#[derive(Arbitrary, Debug)]
+pub struct ImplBlock {
+    a: u64,
+    b: u64,
+}
+#[create_cargofuzz_impl_harness(module)]
+impl ImplBlock {
+    pub fn generator(a: u64, b: u64) -> ImplBlock {
+        ImplBlock { a, b }
+    }
+
+    pub fn borrow(&self) -> u64 {
+        self.a
+    }
+
+    pub fn borrow_mut(&mut self, b: u64) {
+        self.b = b;
     }
 }
