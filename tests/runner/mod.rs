@@ -4,32 +4,6 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::{fs, io};
 
 // Copied from dtolnay/trybuild
-macro_rules! path {
-    ($($tt:tt)+) => {
-        tokenize_path!([] [] $($tt)+)
-    };
-}
-macro_rules! tokenize_path {
-    ([$(($($component:tt)+))*] [$($cur:tt)+] / $($rest:tt)+) => {
-        tokenize_path!([$(($($component)+))* ($($cur)+)] [] $($rest)+)
-    };
-
-    ([$(($($component:tt)+))*] [$($cur:tt)*] $first:tt $($rest:tt)*) => {
-        tokenize_path!([$(($($component)+))*] [$($cur)* $first] $($rest)*)
-    };
-
-    ([$(($($component:tt)+))*] [$($cur:tt)+]) => {
-        tokenize_path!([$(($($component)+))* ($($cur)+)])
-    };
-
-    ([$(($($component:tt)+))*]) => {{
-        let mut path = std::path::PathBuf::new();
-        $(
-            path.push(&($($component)+));
-        )*
-        path
-    }};
-}
 
 fn raw_cargo() -> Command {
     match env::var_os("CARGO") {
@@ -41,10 +15,6 @@ fn raw_cargo() -> Command {
 fn cargo(project_dir: &PathBuf) -> Command {
     let mut cmd = raw_cargo();
     cmd.current_dir(&project_dir);
-    //cmd.env(
-        //"CARGO_TARGET_DIR",
-        //path!(project_dir / "target" / "tests" / "target"),
-    //);
     cmd.arg("--offline");
     set_env(&mut cmd);
     cmd
@@ -90,21 +60,25 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
 }
 
 pub fn cargo_build(project_dir: &PathBuf) -> Result<ExitStatus, std::io::Error> {
-    cargo(project_dir)
+    let cargo_handle = cargo(project_dir)
         .arg("build")
-        .stdout(Stdio::null())
-        //.stderr(Stdio::null())
-        .stderr(Stdio::inherit())
-        .status()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+    print!("{}", String::from_utf8(cargo_handle.stdout).unwrap());
+    eprint!("{}", String::from_utf8(cargo_handle.stderr).unwrap());
+    Ok(cargo_handle.status)
 }
 
 pub fn fuzz_build(project_dir: &PathBuf, target_name: &str) -> Result<ExitStatus, std::io::Error> {
-    cargo(project_dir)
+    let cargo_handle = cargo(project_dir)
         .arg("fuzz")
         .arg("build")
         .arg(&target_name)
-        .stdout(Stdio::null())
-        //.stderr(Stdio::null())
-        .stderr(Stdio::inherit())
-        .status()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+    print!("{}", String::from_utf8(cargo_handle.stdout).unwrap());
+    eprint!("{}", String::from_utf8(cargo_handle.stderr).unwrap());
+    Ok(cargo_handle.status)
 }
