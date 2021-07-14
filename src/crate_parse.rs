@@ -18,20 +18,9 @@ pub struct CrateInfo {
 
 impl CrateInfo {
     pub fn from_root(path: &Path) -> Option<CrateInfo> {
-        if !path.is_dir() {
-            return None;
-        }
-        let mut entries = path.read_dir().ok()?;
-        let cargo_toml_present = entries.any(|result| {
-            result
-                .map(|entry| match entry.file_name().to_str() {
-                    Some(filename) => filename == "Cargo.toml",
-                    None => false,
-                })
-                .unwrap_or(false)
-        });
-        if cargo_toml_present {
-            if let Some(crate_name) = CrateInfo::parse_crate_name(&path.join("Cargo.toml")) {
+        let cargo_toml_path = path.join("Cargo.toml");
+        if cargo_toml_path.exists() {
+            if let Some(crate_name) = CrateInfo::parse_crate_name(&cargo_toml_path) {
                 Some(CrateInfo {
                     crate_root: path.to_path_buf(),
                     crate_name,
