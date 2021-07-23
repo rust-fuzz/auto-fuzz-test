@@ -20,14 +20,10 @@ impl CrateInfo {
     pub fn from_root(path: &Path) -> Option<CrateInfo> {
         let cargo_toml_path = path.join("Cargo.toml");
         if cargo_toml_path.exists() {
-            if let Some(crate_name) = CrateInfo::parse_crate_name(&cargo_toml_path) {
-                Some(CrateInfo {
-                    crate_root: path.to_path_buf(),
-                    crate_name,
-                })
-            } else {
-                None
-            }
+            CrateInfo::parse_crate_name(&cargo_toml_path).map(|crate_name| CrateInfo {
+                crate_root: path.to_path_buf(),
+                crate_name,
+            })
         } else {
             None
         }
@@ -110,7 +106,7 @@ impl CrateInfo {
                     let fuzz_target_exists = parts.skip(5).any(|item| {
                         // In this closure we extract target ident and compare it with the one we want to add.
                         // If anything goes wrong, this closure returns `false`.
-                        if let Some(target_name_line) = item.lines().nth(1) {
+                        item.lines().nth(1).map_or(false, |target_name_line| {
                             if let Ok(TomlTable(table)) = &target_name_line.parse::<TomlValue>() {
                                 if let Some(TomlString(s)) = table.get("name") {
                                     s == &ident
@@ -120,9 +116,7 @@ impl CrateInfo {
                             } else {
                                 false
                             }
-                        } else {
-                            false
-                        }
+                        })
                     });
                     if !fuzz_target_exists {
                         write!(

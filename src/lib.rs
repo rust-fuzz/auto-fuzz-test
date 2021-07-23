@@ -13,7 +13,7 @@ pub fn create_cargofuzz_harness(
     attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let output = create_function_harness(TokenStream::from(attr), input);
+    let output = create_function_harness(&TokenStream::from(attr), input);
     proc_macro::TokenStream::from(output)
 }
 
@@ -22,11 +22,11 @@ pub fn create_cargofuzz_impl_harness(
     attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let output = create_impl_harness(TokenStream::from(attr), input);
+    let output = create_impl_harness(&TokenStream::from(attr), input);
     proc_macro::TokenStream::from(output)
 }
 
-fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) -> TokenStream {
+fn create_function_harness(attr: &TokenStream, input: proc_macro::TokenStream) -> TokenStream {
     let function: ItemFn = syn::parse(input).expect("Failed to parse input");
 
     let fuzz_struct = generate::fuzz_struct(&function.sig, None).unwrap();
@@ -44,16 +44,16 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
     let crate_ident = format_ident!("{}", &crate_name_underscored);
 
     // Writing fuzzing harness to file
-    let ident = crate_parse::construct_harness_ident(&function.sig.ident, None, &attr);
+    let ident = crate_parse::construct_harness_ident(&function.sig.ident, None, attr);
 
-    let code = generate::fuzz_harness(&function.sig, None, &crate_ident, &attr);
+    let code = generate::fuzz_harness(&function.sig, None, &crate_ident, attr);
 
     fs::write(fuzz_dir_path.join(ident + ".rs"), code.to_string())
         .expect("Failed to write fuzzing harness to fuzz/fuzz_targets");
     // TODO: Error handing
 
     crate_info
-        .add_target_to_cargo_toml(&function.sig.ident, None, &attr)
+        .add_target_to_cargo_toml(&function.sig.ident, None, attr)
         .expect("Failed to update Cargo.toml");
 
     quote!(
@@ -63,7 +63,7 @@ fn create_function_harness(attr: TokenStream, input: proc_macro::TokenStream) ->
     )
 }
 
-fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> TokenStream {
+fn create_impl_harness(attr: &TokenStream, input: proc_macro::TokenStream) -> TokenStream {
     let implementation: ItemImpl = syn::parse(input).expect("Failed to parse input");
     // Checking that the implementation meets the requirements
     assert_eq!(
@@ -103,12 +103,12 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                         &method.sig,
                         Some(&implementation.self_ty),
                         &crate_ident,
-                        &attr,
+                        attr,
                     );
                     let ident = crate_parse::construct_harness_ident(
                         &method.sig.ident,
                         Some(&implementation.self_ty),
-                        &attr,
+                        attr,
                     );
 
                     fs::write(fuzz_dir_path.join(ident + ".rs"), code.to_string())
@@ -119,7 +119,7 @@ fn create_impl_harness(attr: TokenStream, input: proc_macro::TokenStream) -> Tok
                         .add_target_to_cargo_toml(
                             &method.sig.ident,
                             Some(&implementation.self_ty),
-                            &attr,
+                            attr,
                         )
                         .expect("Failed to update Cargo.toml");
                     fuzz_structs.push(fuzz_struct);

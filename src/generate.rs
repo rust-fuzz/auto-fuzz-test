@@ -117,8 +117,8 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> Result<It
                     }
                 }
                 FnArg::Receiver(res) => {
-                    if let Some(ref impl_type) = impl_type {
-                        if let Type::Path(_) = impl_type {
+                    if let Some(impl_type) = impl_type {
+                        if let Type::Path(_) = &impl_type {
                             if res.reference.is_some() {
                                 // `variable` is a new struct field
                                 let mut variable = default_boxed_variable.clone();
@@ -157,7 +157,7 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> Result<It
                             return Err(Error::ComplexSelfType);
                         }
                     } else {
-                        panic!("Self type must be supplied for method parsing")
+                        panic!("Self type must be supplied for method parsing");
                     }
                 }
             }
@@ -208,7 +208,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
                     for item in (*signature).inputs.iter().skip(1) {
                         match item {
                             FnArg::Typed(i) => {
-                                if let Pat::Ident(id) = &*i.pat {
+                                if let Pat::Ident(id) = i.pat.as_ref() {
                                     match *i.ty.clone() {
                                         Type::Reference(rf) => {
                                             let mut new_field = default_borrowed_field.clone();
@@ -263,7 +263,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
                         }
                     }
                 } else {
-                    unreachable!("Wrong method call template.")
+                    unreachable!("Wrong method call template.");
                 }
             }
             FnArg::Typed(_) => {
@@ -296,7 +296,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
                     for item in (*signature).inputs.iter() {
                         match item {
                             FnArg::Typed(i) => {
-                                if let Pat::Ident(id) = &*i.pat {
+                                if let Pat::Ident(id) = i.pat.as_ref() {
                                     match *i.ty.clone() {
                                         Type::Reference(rf) => {
                                             let mut new_field = default_borrowed_field.clone();
@@ -348,12 +348,12 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
                             FnArg::Receiver(_) => {
                                 panic!(
                                     "This macros can not be used for fuzzing methods, use #[create_cargofuzz_impl_harness]"
-                                )
+                                );
                             }
                         }
                     }
                 } else {
-                    unreachable!("Wrong generator call template.")
+                    unreachable!("Wrong generator call template.");
                 }
             }
         }
@@ -371,7 +371,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
             if let Expr::Path(path) = &mut *fn_call.func {
                 path.path.segments.iter_mut().next().unwrap().ident = (*signature).ident.clone();
             } else {
-                unreachable!("Wrong function harness template.")
+                unreachable!("Wrong function harness template.");
             }
 
             // Arguments for internal function call
@@ -382,7 +382,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
             for item in (*signature).inputs.iter() {
                 match item {
                     FnArg::Typed(i) => {
-                        if let Pat::Ident(id) = &*i.pat {
+                        if let Pat::Ident(id) = i.pat.as_ref() {
                             match *i.ty.clone() {
                                 Type::Reference(rf) => {
                                     let mut new_field = default_borrowed_field.clone();
