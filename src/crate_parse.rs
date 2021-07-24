@@ -1,5 +1,7 @@
 use fs3::FileExt;
 use proc_macro2::TokenStream;
+use std::env;
+use std::env::VarError;
 use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -17,6 +19,13 @@ pub struct CrateInfo {
 }
 
 impl CrateInfo {
+    pub fn new() -> Result<CrateInfo, VarError> {
+        Ok(CrateInfo {
+            crate_root: PathBuf::from(env::var("CARGO_MANIFEST_DIR")?),
+            crate_name: env::var("CARGO_PKG_NAME")?,
+        })
+    }
+    #[deprecated(note = "Use new() instead")]
     pub fn from_root(path: &Path) -> Option<CrateInfo> {
         let cargo_toml_path = path.join("Cargo.toml");
         if cargo_toml_path.exists() {

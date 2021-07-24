@@ -1,8 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use std::env;
 use std::fs;
-use std::path::PathBuf;
 use syn::{ImplItem, ItemFn, ItemImpl, ItemStruct};
 
 mod crate_parse;
@@ -32,10 +30,7 @@ fn create_function_harness(attr: &TokenStream, input: proc_macro::TokenStream) -
     let fuzz_struct = generate::fuzz_struct(&function.sig, None).unwrap();
     let fuzz_function = generate::fuzz_function(&function.sig, None).unwrap();
 
-    let crate_info = crate_parse::CrateInfo::from_root(&PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("Failed to obtain cargo manifest dir"),
-    ))
-    .expect("Failed to obtain crate info");
+    let crate_info = crate_parse::CrateInfo::new().expect("Failed to obtain crate info");
 
     let fuzz_dir_path = crate_info.fuzz_dir().expect("Failed to create fuzz dir");
 
@@ -75,10 +70,7 @@ fn create_impl_harness(attr: &TokenStream, input: proc_macro::TokenStream) -> To
     //"Generics are not currently supported."
     //);
     //TODO: tests
-    let crate_info = crate_parse::CrateInfo::from_root(
-        &env::current_dir().expect("Failed to obtain project root dir"),
-    )
-    .expect("Failed to obtain crate info");
+    let crate_info = crate_parse::CrateInfo::new().expect("Failed to obtain crate info");
 
     let fuzz_dir_path = crate_info.fuzz_dir().expect("Failed to create fuzz dir");
 
