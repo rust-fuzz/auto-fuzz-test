@@ -1,0 +1,17 @@
+[workspace]
+
+members = ["*"]
+exclude = ["target"]
+
+    #"fn-borrow",
+    #"fn-borrow-mut",
+    #"fn-no-borrow",
+    #"implblock-borrow",
+    #"implblock-borrow-mut",
+    #"implblock-generator",
+    #"module-fn-borrow",
+    #"module-fn-borrow-mut",
+    #"module-fn-no-borrow",
+    #"module-implblock-borrow",
+    #"module-implblock-borrow-mut",
+    #"module-implblock-generator",

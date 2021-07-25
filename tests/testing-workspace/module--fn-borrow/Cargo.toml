@@ -1,0 +1,9 @@
+[package]
+name = "module--fn-borrow"
+version = "0.1.0"
+authors = ["jhwgh1968 <jhwgh1968@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+auto-fuzz-test = { path = "../../../"  }
+arbitrary = { version = "1", features = ["derive"]  }

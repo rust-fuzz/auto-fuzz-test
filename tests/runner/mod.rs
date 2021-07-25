@@ -32,7 +32,7 @@ fn set_env(cmd: &mut Command) {
 }
 
 pub fn test_dir(source_dir: &PathBuf) -> std::io::Result<PathBuf> {
-    let test_dir = source_dir.join("target").join("test-lib");
+    let test_dir = source_dir.join("target").join("testing-workspace");
     match std::fs::create_dir_all(&test_dir) {
         Ok(_) => Ok(test_dir),
         Err(e) => {
