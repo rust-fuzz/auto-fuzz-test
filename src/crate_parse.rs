@@ -2,9 +2,9 @@ use fs3::FileExt;
 use proc_macro2::TokenStream;
 use std::env;
 use std::env::VarError;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{Error, ErrorKind, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use syn::{Ident, Type};
 
 use cargo_toml::Value::String as TomlString;
@@ -24,18 +24,6 @@ impl CrateInfo {
             crate_root: PathBuf::from(env::var("CARGO_MANIFEST_DIR")?),
             crate_name: env::var("CARGO_PKG_NAME")?,
         })
-    }
-    #[deprecated(note = "Use new() instead")]
-    pub fn from_root(path: &Path) -> Option<CrateInfo> {
-        let cargo_toml_path = path.join("Cargo.toml");
-        if cargo_toml_path.exists() {
-            CrateInfo::parse_crate_name(&cargo_toml_path).map(|crate_name| CrateInfo {
-                crate_root: path.to_path_buf(),
-                crate_name,
-            })
-        } else {
-            None
-        }
     }
 
     pub fn crate_name(&self) -> &str {
@@ -149,27 +137,6 @@ impl CrateInfo {
         }
     }
 
-    fn parse_crate_name(cargo_toml_path: &Path) -> Option<String> {
-        let cargo_bytes = {
-            let mut cargo_bytes = Vec::new();
-            File::open(cargo_toml_path)
-                .ok()?
-                .read_to_end(&mut cargo_bytes)
-                .ok()?;
-            cargo_bytes
-        };
-
-        let cargo_toml: TomlValue = toml::from_slice(&cargo_bytes).ok()?;
-
-        Some(
-            cargo_toml
-                .get("package")?
-                .get("name")?
-                .as_str()?
-                .to_string(),
-        )
-    }
-
     const CARGO_TOML_TEMPLATE_PREFIX: &'static str = r#"[package]
 name = ""#;
 
@@ -263,50 +230,39 @@ mod tests {
     use pretty_assertions::assert_eq;
     use quote::{format_ident, quote};
     use std::fs::File;
-    use std::io::Write;
     use std::thread;
     use syn::ItemImpl;
     use tempfile::tempdir;
 
     #[test]
-    fn no_cargo_toml() {
-        let dir = tempdir().expect("Could not create a tempdir fot test");
-        assert_eq!(CrateInfo::from_root(dir.path()), None);
+    fn no_env_vars() {
+        env::remove_var("CARGO_MANIFEST_DIR");
+        env::remove_var("CARGO_PKG_NAME");
+
+        assert!(dbg!(CrateInfo::new()).is_err());
     }
 
     #[test]
-    fn empty_cargo_toml() {
-        let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-
-        assert_eq!(CrateInfo::parse_crate_name(&cargo_toml_path), None);
-    }
-
-    #[test]
-    fn parse_valid_cargo_toml() {
-        let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
+    fn valid_env_vars() {
+        env::set_var("CARGO_MANIFEST_DIR", "/foo/bar/");
+        env::set_var("CARGO_PKG_NAME", "test-lib");
 
         assert_eq!(
-            CrateInfo::parse_crate_name(&cargo_toml_path),
-            Some("test-lib".to_string())
+            CrateInfo::new(),
+            Ok(CrateInfo {
+                crate_name: "test-lib".to_string(),
+                crate_root: PathBuf::from("/foo/bar/")
+            })
         );
     }
 
     #[test]
     fn create_dirs() {
         let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
-        let crate_info = CrateInfo::from_root(dir.path()).unwrap();
+        env::set_var("CARGO_MANIFEST_DIR", dir.path());
+        env::set_var("CARGO_PKG_NAME", "test-lib");
+
+        let crate_info = CrateInfo::new().unwrap();
 
         assert_eq!(
             crate_info.fuzz_dir().unwrap(),
@@ -317,12 +273,10 @@ mod tests {
     #[test]
     fn write_cargo_nomodule_noimpl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
-        let crate_info = CrateInfo::from_root(dir.path()).unwrap();
+        env::set_var("CARGO_MANIFEST_DIR", dir.path());
+        env::set_var("CARGO_PKG_NAME", "test-lib");
+
+        let crate_info = CrateInfo::new().unwrap();
 
         let ident = format_ident!("foo");
         let module = TokenStream::new();
@@ -344,12 +298,10 @@ mod tests {
     #[test]
     fn write_cargo_module_noimpl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
-        let crate_info = CrateInfo::from_root(dir.path()).unwrap();
+        env::set_var("CARGO_MANIFEST_DIR", dir.path());
+        env::set_var("CARGO_PKG_NAME", "test-lib");
+
+        let crate_info = CrateInfo::new().unwrap();
 
         let ident = format_ident!("cat");
         let module = quote!(foo::bar::dog);
@@ -371,12 +323,10 @@ mod tests {
     #[test]
     fn write_cargo_nomodule_impl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
-        let crate_info = CrateInfo::from_root(dir.path()).unwrap();
+        env::set_var("CARGO_MANIFEST_DIR", dir.path());
+        env::set_var("CARGO_PKG_NAME", "test-lib");
+
+        let crate_info = CrateInfo::new().unwrap();
 
         let ident = format_ident!("foo");
         let implementation: ItemImpl = syn::parse2(quote! {
@@ -402,12 +352,10 @@ mod tests {
     #[test]
     fn write_cargo_module_impl() {
         let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
-        let crate_info = CrateInfo::from_root(dir.path()).unwrap();
+        env::set_var("CARGO_MANIFEST_DIR", dir.path());
+        env::set_var("CARGO_PKG_NAME", "test-lib");
+
+        let crate_info = CrateInfo::new().unwrap();
 
         let ident = format_ident!("cat");
         let implementation: ItemImpl = syn::parse2(quote! {
@@ -433,15 +381,13 @@ mod tests {
     #[test]
     fn write_cargo_concurently() {
         let dir = tempdir().expect("Could not create tempdir fot test");
-        let cargo_toml_path = dir.path().join("Cargo.toml");
-        let mut cargo_toml =
-            File::create(&cargo_toml_path).expect("Could not create Cargo.toml fot test");
-        writeln!(cargo_toml, "{}", VALID_CARGO_TOML)
-            .expect("Could not write valid data to Cargo.toml fot test");
-        let crate_info = CrateInfo::from_root(dir.path()).unwrap();
+        env::set_var("CARGO_MANIFEST_DIR", dir.path());
+        env::set_var("CARGO_PKG_NAME", "test-lib");
 
-        // Here comments with numbers are used to enumerate different function idents later they
-        // will be used in different threads in different order
+        let crate_info = CrateInfo::new().unwrap();
+
+        // Here comments with numbers are used to enumerate different function idents
+        // later they will be used in different threads in different order
         let mut idents_needed = vec![
             "foo".to_string(),                      // 1
             "bar".to_string(),                      // 2
@@ -691,17 +637,6 @@ mod tests {
 
         assert_eq!(idents_needed, idents);
     }
-
-    const VALID_CARGO_TOML: &str = r#"[package]
-name = "test-lib"
-version = "0.1.0"
-authors = ["<test>"]
-edition = "2018"
-
-[dependencies]
-auto-fuzz-test = { path = "../"  }
-arbitrary = { version = "1", features = ["derive"]  }
-"#;
 
     const VALID_GENERATED_CARGO_TOML_NOMODULE_NOIMPL: &str = r#"[package]
 name = "test-lib-fuzz"
