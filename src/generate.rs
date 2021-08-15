@@ -70,15 +70,16 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> Result<It
 
                                     // Copying variable type
                                     if let Type::Path(ref mut new_path) = variable.ty {
-                                        if let PathArguments::AngleBracketed(
-                                            ref mut new_generic_arg,
-                                        ) = new_path
+                                        let arguments = &mut new_path
                                             .path
                                             .segments
                                             .iter_mut()
                                             .next()
                                             .unwrap()
-                                            .arguments
+                                            .arguments;
+                                        if let PathArguments::AngleBracketed(
+                                            ref mut new_generic_arg,
+                                        ) = arguments
                                         {
                                             if let GenericArgument::Type(ref mut new_subpath) =
                                                 new_generic_arg.args.iter_mut().next().unwrap()
@@ -126,8 +127,15 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> Result<It
 
                                 // Copying variable type
                                 if let Type::Path(ref mut new_path) = variable.ty {
+                                    let arguments = &mut new_path
+                                        .path
+                                        .segments
+                                        .iter_mut()
+                                        .next()
+                                        .unwrap()
+                                        .arguments;
                                     if let PathArguments::AngleBracketed(ref mut new_generic_arg) =
-                                        new_path.path.segments.iter_mut().next().unwrap().arguments
+                                        arguments
                                     {
                                         if let GenericArgument::Type(ref mut new_subpath) =
                                             new_generic_arg.args.iter_mut().next().unwrap()
@@ -181,9 +189,21 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
         return Err(Error::Empty);
     }
 
+    // Unwrapping ident of the impl block
+    let impl_ident = match impl_type {
+        Some(typ) => {
+            if let Type::Path(path) = typ {
+                Some(&path.path.segments.first().unwrap().ident)
+            } else {
+                return Err(Error::ComplexSelfType);
+            }
+        }
+        None => None,
+    };
+
     let mut fuzz_function: syn::ItemFn;
 
-    if let Some(typ) = impl_type {
+    if let Some(ident) = impl_ident {
         match (*signature).inputs.first().unwrap() {
             FnArg::Receiver(_) => {
                 // method harness template
@@ -279,12 +299,7 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
                     // FnCall inside fuzzing function
                     if let Expr::Path(path) = &mut *fn_call.func {
                         let mut segments_iter = path.path.segments.iter_mut();
-                        if let Type::Path(type_path) = typ {
-                            segments_iter.next().unwrap().ident =
-                                type_path.path.segments.first().unwrap().ident.clone();
-                        } else {
-                            return Err(Error::ComplexMethodCall);
-                        }
+                        segments_iter.next().unwrap().ident = ident.clone();
                         segments_iter.next().unwrap().ident = (*signature).ident.clone();
                     }
 
@@ -369,7 +384,8 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
         if let Stmt::Semi(Expr::Call(fn_call), _) = &mut fuzz_function.block.stmts[0] {
             // FnCall inside fuzzing function
             if let Expr::Path(path) = &mut *fn_call.func {
-                path.path.segments.iter_mut().next().unwrap().ident = (*signature).ident.clone();
+                let function_ident = &mut path.path.segments.first_mut().unwrap().ident;
+                *function_ident = (*signature).ident.clone();
             } else {
                 unreachable!("Wrong function harness template.");
             }
@@ -439,40 +455,38 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
         }
     }
 
-    // Fuzing function input type
-    if let FnArg::Typed(i) = fuzz_function.sig.inputs.iter_mut().next().unwrap() {
+    // Fuzzing function input type
+    let fuzz_function_args = &mut fuzz_function.sig.inputs;
+    if let FnArg::Typed(i) = fuzz_function_args.first_mut().unwrap() {
         if let Type::Path(typ) = &mut *i.ty {
-            typ.path.segments.iter_mut().next().unwrap().ident = match impl_type {
-                Some(typ) => {
-                    if let Type::Path(path) = typ {
-                        format_ident!(
-                            "__fuzz_struct_{}_{}",
-                            &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                            &(*signature).ident.to_string()
-                        )
-                    } else {
-                        return Err(Error::ComplexSelfType);
-                    }
+            let argument_type = &mut typ.path.segments.first_mut().unwrap().ident;
+            *argument_type = match impl_ident {
+                Some(ident) => {
+                    format_ident!(
+                        "__fuzz_struct_{}_{}",
+                        ident.to_string(),
+                        &(*signature).ident.to_string()
+                    )
                 }
                 None => {
                     format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string())
                 }
             };
+        } else {
+            unreachable!("Wrong function call template.");
         }
+    } else {
+        unreachable!("Wrong function call template.");
     }
 
     // Fuzzing function ident
-    fuzz_function.sig.ident = match impl_type {
-        Some(typ) => {
-            if let Type::Path(path) = typ {
-                format_ident!(
-                    "__fuzz_{}_{}",
-                    &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                    &(*signature).ident.to_string()
-                )
-            } else {
-                return Err(Error::ComplexSelfType);
-            }
+    fuzz_function.sig.ident = match impl_ident {
+        Some(ident) => {
+            format_ident!(
+                "__fuzz_{}_{}",
+                ident.to_string(),
+                &(*signature).ident.to_string()
+            )
         }
         None => {
             format_ident!("__fuzz_{}", &(*signature).ident.to_string())
@@ -489,38 +503,30 @@ pub fn fuzz_harness(
     attr: &TokenStream,
 ) -> TokenStream {
     // Idents generation
-    let arg_type = match impl_type {
+    let (arg_type, function_ident) = match impl_type {
         Some(typ) => {
             if let Type::Path(path) = typ {
-                format_ident!(
-                    "__fuzz_struct_{}_{}",
-                    &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                    &(*signature).ident.to_string()
+                let ident = &path.path.segments.first().unwrap().ident;
+                (
+                    format_ident!(
+                        "__fuzz_struct_{}_{}",
+                        ident.to_string(),
+                        &(*signature).ident.to_string()
+                    ),
+                    format_ident!(
+                        "__fuzz_{}_{}",
+                        ident.to_string(),
+                        &(*signature).ident.to_string()
+                    ),
                 )
             } else {
                 unimplemented!("Complex self type.")
             }
         }
-        None => {
-            format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string())
-        }
-    };
-
-    let function_ident = match impl_type {
-        Some(typ) => {
-            if let Type::Path(path) = typ {
-                format_ident!(
-                    "__fuzz_{}_{}",
-                    &(path.path.segments.iter().next().unwrap().ident).to_string(),
-                    &(*signature).ident.to_string()
-                )
-            } else {
-                unimplemented!("Complex self type.")
-            }
-        }
-        None => {
-            format_ident!("__fuzz_{}", &(*signature).ident.to_string())
-        }
+        None => (
+            format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string()),
+            format_ident!("__fuzz_{}", &(*signature).ident.to_string()),
+        ),
     };
 
     let path = {
@@ -553,7 +559,6 @@ pub enum Error {
     ComplexArg,
     ComplexSelfType,
     MultipleRes,
-    ComplexMethodCall,
     ComplexVariable,
 }
 
@@ -566,7 +571,6 @@ impl fmt::Display for Error {
             Error::ComplexArg => "Type of the function must be either standalone, or borrowed standalone (like `&Type`, but not like `&(u32, String)`)",
             Error::ComplexSelfType => "Only implementations for simple (like `MyType`) types are supported",
             Error::MultipleRes => "Muptiple Self values in function args.",
-            Error::ComplexMethodCall => "Complex method calls are not currently supported.",
             Error::ComplexVariable => "Complex variables (like `&mut *a`) are not supported",
         };
 
@@ -757,7 +761,6 @@ mod tests {
         .unwrap();
         assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
-
 
     #[test]
     fn function_unborrowed() {
