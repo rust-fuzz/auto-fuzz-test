@@ -693,6 +693,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn struct_sliced_arg() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool, sl: &[u32]) -> u64 {
@@ -704,7 +705,19 @@ mod tests {
             }
         })
         .unwrap();
-        assert_eq!(fuzz_struct(&function.sig, None), Err(Error::ComplexArg));
+
+        let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
+            #[derive(Arbitrary)]
+            #[derive(Debug)]
+            pub struct __fuzz_struct_maybe_checked_mul {
+                a: u64,
+                b: u64,
+                crash_on_overflow: bool,
+                sl: Vec<u32>
+            }
+        })
+        .unwrap();
+        assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
     }
 
     #[test]
@@ -724,6 +737,27 @@ mod tests {
             Err(Error::ComplexVariable)
         );
     }
+
+    #[test]
+    fn struct_parametric_type() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn foo(a: Vec<u32>) -> usize {
+                a.len()
+            }
+        })
+        .unwrap();
+
+        let fuzz_struct_needed: ItemStruct = syn::parse2(quote! {
+            #[derive(Arbitrary)]
+            #[derive(Debug)]
+            pub struct __fuzz_struct_foo {
+                a: Vec<u32>
+            }
+        })
+        .unwrap();
+        assert_eq!(fuzz_struct(&function.sig, None), Ok(fuzz_struct_needed));
+    }
+
 
     #[test]
     fn function_unborrowed() {
@@ -771,6 +805,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn function_sliced_arg() {
         let function: ItemFn = syn::parse2(quote! {
             pub fn maybe_checked_mul(a: u64, b: u64, crash_on_overflow: bool, sl: &[u32]) -> u64 {
@@ -785,7 +820,7 @@ mod tests {
 
         let fuzz_function_needed: ItemFn = syn::parse2(quote! {
             pub fn __fuzz_maybe_checked_mul(mut input:__fuzz_struct_maybe_checked_mul) {
-                maybe_checked_mul(input.a, input.b, input.crash_on_overflow, & *input.sl);
+                maybe_checked_mul(input.a, input.b, input.crash_on_overflow, &input.sl[..]);
             }
         })
         .unwrap();
@@ -823,6 +858,24 @@ mod tests {
         })
         .unwrap();
         assert_eq!(fuzz_function(&function.sig, None), Err(Error::Empty));
+    }
+
+    #[test]
+    fn function_parametric_type() {
+        let function: ItemFn = syn::parse2(quote! {
+            pub fn foo(a: Vec<u32>) -> usize {
+                a.len()
+            }
+        })
+        .unwrap();
+
+        let fuzz_function_needed: ItemFn = syn::parse2(quote! {
+            pub fn __fuzz_foo(mut input:__fuzz_struct_foo) {
+                foo(input.a);
+            }
+        })
+        .unwrap();
+        assert_eq!(fuzz_function(&function.sig, None), Ok(fuzz_function_needed));
     }
 
     #[test]
