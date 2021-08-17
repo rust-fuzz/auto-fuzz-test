@@ -37,141 +37,147 @@ pub fn fuzz_struct(signature: &Signature, impl_type: Option<&Type>) -> Result<It
     };
 
     // Struct fields generation
-    if let Fields::Named(ref mut fields) = fuzz_struct.fields {
-        // Here comes an epic destructuring of syn types.
-        // `else` parts of match arms on known data (`fuzz_struct` in this case) are
-        // marked with unreachable! macro, as they are, ahem, unreachable.
-        let default_boxed_variable = fields
-            .named
-            .pop()
-            .expect(
-                "Struct template must contain
+    // Here comes an epic destructuring of syn types.
+    // sure! macro is used to avoid dozens of similar `match` statements.
+    // `else` parts of that match arms are marked with unreachable! macro,
+    // as they are called on a known data.
+    let fields = match fuzz_struct.fields {
+        Fields::Named(ref mut fields) => fields,
+        _ => unreachable!("Struct template must contain named fields"),
+    };
+
+    let default_boxed_variable = fields
+        .named
+        .pop()
+        .expect(
+            "Struct template must contain
                 Boxed variable",
-            )
-            .into_value();
-        let default_variable = fields
-            .named
-            .pop()
-            .expect(
-                "Struct template must contain
+        )
+        .into_value();
+
+    let default_variable = fields
+        .named
+        .pop()
+        .expect(
+            "Struct template must contain
                 unBoxed variable",
-            )
-            .into_value();
-        for item in (*signature).inputs.iter() {
-            match item {
-                FnArg::Typed(i) => {
-                    if let Pat::Ident(id) = &*i.pat {
-                        match *i.ty.clone() {
-                            Type::Reference(rf) => {
-                                if let Type::Path(path) = *rf.elem.clone() {
-                                    // `variable` is a new struct field
-                                    let mut variable = default_boxed_variable.clone();
-                                    variable.ident = Some(id.ident.clone());
+        )
+        .into_value();
 
-                                    // Copying variable type
-                                    if let Type::Path(ref mut new_path) = variable.ty {
-                                        let arguments = &mut new_path
-                                            .path
-                                            .segments
-                                            .iter_mut()
-                                            .next()
-                                            .unwrap()
-                                            .arguments;
-                                        if let PathArguments::AngleBracketed(
-                                            ref mut new_generic_arg,
-                                        ) = arguments
-                                        {
-                                            if let GenericArgument::Type(ref mut new_subpath) =
-                                                new_generic_arg.args.iter_mut().next().unwrap()
-                                            {
-                                                *new_subpath = Type::Path(path);
-                                            } else {
-                                                unreachable!("Wrong boxed variable template");
-                                            }
-                                        } else {
-                                            unreachable!("Wrong boxed variable template");
-                                        }
-                                    } else {
-                                        unreachable!("Wrong boxed variable template");
-                                    }
-                                    // Pushing variable type for the struct field
-                                    fields.named.push(variable);
-                                } else {
-                                    return Err(Error::ComplexArg);
-                                }
-                            }
-                            Type::Path(path) => {
-                                // `variable` is a new struct field
-                                let mut variable = default_variable.clone();
-                                variable.ident = Some(id.ident.clone());
-                                // Copying variable type
-                                variable.ty = Type::Path(path);
-                                // Pushing variable type for the struct field
-                                fields.named.push(variable);
-                            }
-                            _ => {
-                                return Err(Error::ComplexArg);
-                            }
+    for item in (*signature).inputs.iter() {
+        match item {
+            FnArg::Typed(i) => {
+                let id = match &*i.pat {
+                    Pat::Ident(id) => id,
+                    _ => return Err(Error::ComplexVariable),
+                };
+
+                match *i.ty.clone() {
+                    Type::Reference(rf) => {
+                        let path = match *rf.elem.clone() {
+                            Type::Path(path) => path,
+                            _ => unreachable!("Wrong boxed variable template"),
                         };
-                    } else {
-                        return Err(Error::ComplexVariable);
-                    }
-                }
-                FnArg::Receiver(res) => {
-                    if let Some(impl_type) = impl_type {
-                        if let Type::Path(_) = &impl_type {
-                            if res.reference.is_some() {
-                                // `variable` is a new struct field
-                                let mut variable = default_boxed_variable.clone();
-                                variable.ident = Some(format_ident!("slf"));
+                        // `variable` is a new struct field
+                        let mut variable = default_boxed_variable.clone();
+                        variable.ident = Some(id.ident.clone());
 
-                                // Copying variable type
-                                if let Type::Path(ref mut new_path) = variable.ty {
-                                    let arguments = &mut new_path
-                                        .path
-                                        .segments
-                                        .iter_mut()
-                                        .next()
-                                        .unwrap()
-                                        .arguments;
-                                    if let PathArguments::AngleBracketed(ref mut new_generic_arg) =
-                                        arguments
-                                    {
-                                        if let GenericArgument::Type(ref mut new_subpath) =
-                                            new_generic_arg.args.iter_mut().next().unwrap()
-                                        {
-                                            *new_subpath = (*impl_type).clone();
-                                        } else {
-                                            unreachable!("Wrong boxed variable template");
-                                        }
-                                    } else {
-                                        unreachable!("Wrong boxed variable template");
-                                    }
-                                } else {
+                        // Copying variable type
+                        let new_path = match variable.ty {
+                            Type::Path(ref mut new_path) => new_path,
+                            _ => return Err(Error::ComplexArg),
+                        };
+                        let arguments =
+                            &mut new_path.path.segments.iter_mut().next().unwrap().arguments;
+
+                        let new_generic_arg = match arguments {
+                            PathArguments::AngleBracketed(ref mut new_generic_arg) => {
+                                new_generic_arg
+                            }
+                            _ => unreachable!("Wrong boxed variable template"),
+                        };
+
+                        match new_generic_arg.args.first_mut().unwrap() {
+                            GenericArgument::Type(ref mut new_subpath) => {
+                                *new_subpath = Type::Path(path);
+                            }
+                            _ => unreachable!("Wrong boxed variable template"),
+                        };
+                        // Pushing variable type for the struct field
+                        fields.named.push(variable);
+                    }
+                    Type::Path(path) => {
+                        // `variable` is a new struct field
+                        let mut variable = default_variable.clone();
+                        variable.ident = Some(id.ident.clone());
+                        // Copying variable type
+                        variable.ty = Type::Path(path);
+                        // Pushing variable type for the struct field
+                        fields.named.push(variable);
+                    }
+                    _ => {
+                        return Err(Error::ComplexArg);
+                    }
+                };
+            }
+            FnArg::Receiver(res) => {
+                let impl_type = impl_type.unwrap_or_else(|| {
+                    panic!("Self type must be supplied for method parsing");
+                });
+
+                match &impl_type {
+                    Type::Path(_) => {
+                        if res.reference.is_some() {
+                            // `variable` is a new struct field
+                            let mut variable = default_boxed_variable.clone();
+                            variable.ident = Some(format_ident!("slf"));
+
+                            // Copying variable type
+                            let new_path = match variable.ty {
+                                Type::Path(ref mut new_path) => new_path,
+                                _ => {
                                     unreachable!("Wrong boxed variable template");
                                 }
-                                // Pushing variable type for the struct field
-                                fields.named.push(variable);
-                            } else {
-                                // `variable` is a new struct field
-                                let mut variable = default_variable.clone();
-                                variable.ident = Some(format_ident!("slf"));
-                                // Copying variable type
-                                variable.ty = (*impl_type).clone();
-                                // Pushing variable type for the struct field
-                                fields.named.push(variable);
+                            };
+
+                            let arguments =
+                                &mut new_path.path.segments.first_mut().unwrap().arguments;
+
+                            let new_generic_arg = match arguments {
+                                PathArguments::AngleBracketed(ref mut new_generic_arg) => {
+                                    new_generic_arg
+                                }
+                                _ => {
+                                    unreachable!("Wrong boxed variable template");
+                                }
+                            };
+
+                            match new_generic_arg.args.first_mut().unwrap() {
+                                GenericArgument::Type(ref mut new_subpath) => {
+                                    *new_subpath = (*impl_type).clone();
+                                }
+                                _ => {
+                                    unreachable!("Wrong boxed variable template");
+                                }
                             }
+                            // Pushing variable type for the struct field
+                            fields.named.push(variable);
                         } else {
-                            return Err(Error::ComplexSelfType);
+                            // `variable` is a new struct field
+                            let mut variable = default_variable.clone();
+                            variable.ident = Some(format_ident!("slf"));
+                            // Copying variable type
+                            variable.ty = (*impl_type).clone();
+                            // Pushing variable type for the struct field
+                            fields.named.push(variable);
                         }
-                    } else {
-                        panic!("Self type must be supplied for method parsing");
+                    }
+                    _ => {
+                        return Err(Error::ComplexSelfType);
                     }
                 }
             }
         }
-    } else {
-        unreachable!("Struct template must contain named fields");
     }
 
     Ok(fuzz_struct)
@@ -214,76 +220,82 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
                 })
                 .unwrap();
 
-                if let Stmt::Semi(Expr::MethodCall(method_call), _) =
-                    &mut fuzz_function.block.stmts[0]
-                {
-                    // MethodCall inside fuzzing function
-                    method_call.method = (*signature).ident.clone();
+                let method_call = match &mut fuzz_function.block.stmts[0] {
+                    Stmt::Semi(Expr::MethodCall(method_call), _) => method_call,
+                    _ => {
+                        unreachable!("Wrong method call template.");
+                    }
+                };
 
-                    // Arguments for internal method call
-                    let args = &mut method_call.args;
-                    let default_borrowed_field = args.pop().unwrap().into_value();
-                    let default_field = args.pop().unwrap().into_value();
+                // MethodCall inside fuzzing function
+                method_call.method = (*signature).ident.clone();
 
-                    for item in (*signature).inputs.iter().skip(1) {
-                        match item {
-                            FnArg::Typed(i) => {
-                                if let Pat::Ident(id) = i.pat.as_ref() {
-                                    match *i.ty.clone() {
-                                        Type::Reference(rf) => {
-                                            let mut new_field = default_borrowed_field.clone();
-                                            if let Expr::Reference(ref mut new_rf) = new_field {
-                                                // Copying borrow mutability
-                                                new_rf.mutability = rf.mutability;
-                                                // Copying field ident
-                                                if let Expr::Unary(ref mut new_subfield) =
-                                                    *new_rf.expr
-                                                {
-                                                    if let Expr::Field(ref mut new_unary_subfield) =
-                                                        *new_subfield.expr
-                                                    {
-                                                        new_unary_subfield.member =
-                                                            Member::Named(id.ident.clone());
-                                                    } else {
-                                                        unreachable!(
-                                                            "Wrong borrowed field template"
-                                                        );
-                                                    }
-                                                } else {
-                                                    unreachable!("Wrong borrowed field template");
-                                                }
-                                            } else {
+                // Arguments for internal method call
+                let args = &mut method_call.args;
+                let default_borrowed_field = args.pop().unwrap().into_value();
+                let default_field = args.pop().unwrap().into_value();
+
+                for item in (*signature).inputs.iter().skip(1) {
+                    match item {
+                        FnArg::Typed(i) => {
+                            if let Pat::Ident(id) = i.pat.as_ref() {
+                                match *i.ty.clone() {
+                                    Type::Reference(rf) => {
+                                        let mut new_field = default_borrowed_field.clone();
+
+                                        let new_rf = match new_field {
+                                            Expr::Reference(ref mut new_rf) => new_rf,
+                                            _ => {
                                                 unreachable!("Wrong borrowed field template");
                                             }
+                                        };
 
-                                            // Pushing arguments to the function call
-                                            args.push(new_field);
-                                        }
-                                        Type::Path(_) => {
-                                            let mut new_field = default_field.clone();
-                                            if let Expr::Field(ref mut f) = new_field {
-                                                f.member = Member::Named(id.ident.clone());
-                                            } else {
-                                                unreachable!("Wrong unborrowed field template");
+                                        // Copying borrow mutability
+                                        new_rf.mutability = rf.mutability;
+
+                                        // Copying field ident
+                                        let new_subfield = match *new_rf.expr {
+                                            Expr::Unary(ref mut new_subfield) => new_subfield,
+                                            _ => {
+                                                unreachable!("Wrong borrowed field template");
                                             }
-                                            // Pushing arguments to the function call
-                                            args.push(new_field);
+                                        };
+
+                                        if let Expr::Field(ref mut new_unary_subfield) =
+                                            *new_subfield.expr
+                                        {
+                                            new_unary_subfield.member =
+                                                Member::Named(id.ident.clone());
+                                        } else {
+                                            unreachable!("Wrong borrowed field template");
                                         }
-                                        _ => {
-                                            return Err(Error::ComplexArg);
+
+                                        // Pushing arguments to the function call
+                                        args.push(new_field);
+                                    }
+                                    Type::Path(_) => {
+                                        let mut new_field = default_field.clone();
+
+                                        if let Expr::Field(ref mut f) = new_field {
+                                            f.member = Member::Named(id.ident.clone());
+                                        } else {
+                                            unreachable!("Wrong unborrowed field template");
                                         }
-                                    };
-                                } else {
-                                    return Err(Error::ComplexSelfType);
-                                }
-                            }
-                            FnArg::Receiver(_) => {
-                                return Err(Error::MultipleRes);
+                                        // Pushing arguments to the function call
+                                        args.push(new_field);
+                                    }
+                                    _ => {
+                                        return Err(Error::ComplexArg);
+                                    }
+                                };
+                            } else {
+                                return Err(Error::ComplexSelfType);
                             }
                         }
+                        FnArg::Receiver(_) => {
+                            return Err(Error::MultipleRes);
+                        }
                     }
-                } else {
-                    unreachable!("Wrong method call template.");
                 }
             }
             FnArg::Typed(_) => {
@@ -457,41 +469,44 @@ pub fn fuzz_function(signature: &Signature, impl_type: Option<&Type>) -> Result<
 
     // Fuzzing function input type
     let fuzz_function_args = &mut fuzz_function.sig.inputs;
-    if let FnArg::Typed(i) = fuzz_function_args.first_mut().unwrap() {
-        if let Type::Path(typ) = &mut *i.ty {
-            let argument_type = &mut typ.path.segments.first_mut().unwrap().ident;
-            *argument_type = match impl_ident {
-                Some(ident) => {
-                    format_ident!(
-                        "__fuzz_struct_{}_{}",
-                        ident.to_string(),
-                        &(*signature).ident.to_string()
-                    )
-                }
-                None => {
-                    format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string())
-                }
-            };
-        } else {
+
+    let input = match fuzz_function_args.first_mut().unwrap() {
+        FnArg::Typed(i) => i,
+        _ => {
             unreachable!("Wrong function call template.");
         }
-    } else {
-        unreachable!("Wrong function call template.");
-    }
+    };
 
-    // Fuzzing function ident
-    fuzz_function.sig.ident = match impl_ident {
+    let typ = match &mut *input.ty {
+        Type::Path(typ) => typ,
+        _ => {
+            unreachable!("Wrong function call template.");
+        }
+    };
+    let argument_type = &mut typ.path.segments.first_mut().unwrap().ident;
+
+    match impl_ident {
         Some(ident) => {
-            format_ident!(
+            *argument_type = format_ident!(
+                "__fuzz_struct_{}_{}",
+                ident.to_string(),
+                &(*signature).ident.to_string()
+            );
+
+            // Fuzzing function ident
+            fuzz_function.sig.ident = format_ident!(
                 "__fuzz_{}_{}",
                 ident.to_string(),
                 &(*signature).ident.to_string()
-            )
+            );
         }
         None => {
-            format_ident!("__fuzz_{}", &(*signature).ident.to_string())
+            *argument_type = format_ident!("__fuzz_struct_{}", &(*signature).ident.to_string());
+
+            // Fuzzing function ident
+            fuzz_function.sig.ident = format_ident!("__fuzz_{}", &(*signature).ident.to_string());
         }
-    };
+    }
 
     Ok(fuzz_function)
 }
