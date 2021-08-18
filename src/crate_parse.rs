@@ -69,7 +69,13 @@ impl CrateInfo {
                     &CrateInfo::CARGO_TOML_TEMPLATE_INFIX,
                     &self.crate_name(),
                     &CrateInfo::CARGO_TOML_TEMPLATE_POSTFIX
-                )?;
+                )
+                // This write!() can fail. In that case we want to unlock `file` before
+                // exiting with Err(_).
+                .map_err(|err| match file.unlock() {
+                    Ok(_) => err,
+                    Err(new_err) => new_err,
+                })?;
 
                 write!(
                     file,
@@ -79,8 +85,16 @@ impl CrateInfo {
                     &CrateInfo::TARGET_TEMPLATE_INFIX,
                     &ident,
                     &CrateInfo::TARGET_TEMPLATE_POSTFIX
-                )?;
-                file.flush()?;
+                )
+                .map_err(|err| match file.unlock() {
+                    Ok(_) => err,
+                    Err(new_err) => new_err,
+                })?;
+
+                file.flush().map_err(|err| match file.unlock() {
+                    Ok(_) => err,
+                    Err(new_err) => new_err,
+                })?;
 
                 file.unlock()?;
                 Ok(())
@@ -96,7 +110,11 @@ impl CrateInfo {
 
                     // Checking, that we are not going to duplicate [[bin]] targets
                     let mut buffer = String::new();
-                    file.read_to_string(&mut buffer)?;
+                    file.read_to_string(&mut buffer)
+                        .map_err(|err| match file.unlock() {
+                            Ok(_) => err,
+                            Err(new_err) => new_err,
+                        })?;
                     // Generated Cargo.toml consists of several sections splitted by '\n\n'
                     // Here we split and skip the first 5 of them: [package], [package.metadata], [dependencies], [dependencies.<crate_name>] and [workspace]
                     let parts = buffer.split("\n\n");
@@ -124,8 +142,15 @@ impl CrateInfo {
                             &CrateInfo::TARGET_TEMPLATE_INFIX,
                             &ident,
                             &CrateInfo::TARGET_TEMPLATE_POSTFIX
-                        )?;
-                        file.flush()?;
+                        )
+                        .map_err(|err| match file.unlock() {
+                            Ok(_) => err,
+                            Err(new_err) => new_err,
+                        })?;
+                        file.flush().map_err(|err| match file.unlock() {
+                            Ok(_) => err,
+                            Err(new_err) => new_err,
+                        })?;
                     }
 
                     file.unlock()?;
